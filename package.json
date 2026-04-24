@@ -1,0 +1,40 @@
+{
+  "name": "custom-typeorm-query-builder",
+  "version": "0.1.0",
+  "description": "A type-safe wrapper around TypeORM's query builder with immutable chaining and stricter relation typing.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest --run",
+    "test:watch": "vitest",
+    "lint": "eslint . --fix",
+    "prepublishOnly": "yarn build"
+  },
+  "keywords": [
+    "typeorm",
+    "query-builder",
+    "typescript"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "typeorm": ">=0.3.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^25.6.0",
+    "@types/pg": "^8.11.0",
+    "eslint": "^10.2.1",
+    "pg": "^8.13.0",
+    "reflect-metadata": "^0.2.2",
+    "typeorm": "^0.3.28",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.0",
+    "vitest": "^4.1.5"
+  },
+  "packageManager": "yarn@1.22.22"
+}

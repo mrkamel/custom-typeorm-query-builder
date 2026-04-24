@@ -549,6 +549,23 @@ describe('CustomQueryBuilder', () => {
 
       expect(result.map((user) => user.name)).toEqual(['carol', 'bob', 'alice']);
     });
+
+    it('survives the distinctAlias pagination path (take + *-to-many eager load)', async () => {
+      const alice = await createUser('alice', 30);
+      const bob = await createUser('bob', 40);
+      await PostRepository.save({ title: 'a1', user_id: alice.id });
+      await PostRepository.save({ title: 'a2', user_id: alice.id });
+      await PostRepository.save({ title: 'b1', user_id: bob.id });
+
+      const result = await UserRepository.qb()
+        .eagerLoads(['posts'])
+        .orderBy({ name: 'ASC' })
+        .take(1)
+        .getMany();
+
+      expect(result.map((user) => user.name)).toEqual(['alice']);
+      expect(result[0].posts.map((post) => post.title).sort()).toEqual(['a1', 'a2']);
+    });
   });
 
   describe('groupBy', () => {

@@ -368,7 +368,8 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
       this.qb.addOrderBy(sort, order);
     } else {
       Object.keys(sort).forEach((key) => {
-        this.qb.addOrderBy(`${this.quoteColumnName(this.alias)}.${this.quoteColumnName(key)}`, (sort as Record<string, 'ASC' | 'DESC'>)[key]);
+        // TypeORM's take + *-to-many pagination forces us to pass it without quoting.
+        this.qb.addOrderBy(`${this.alias}.${key}`, (sort as Record<string, 'ASC' | 'DESC'>)[key]);
       });
     }
 

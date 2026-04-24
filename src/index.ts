@@ -1,1 +1,1 @@
-export { CustomQueryBuilder } from './CustomQueryBuilder';
+export { CustomQueryBuilder, CustomQueryBuilderError } from './CustomQueryBuilder';

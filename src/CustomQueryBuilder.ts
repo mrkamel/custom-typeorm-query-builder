@@ -1,6 +1,6 @@
 import type { ObjectLiteral, Repository } from 'typeorm';
 
-class CustomQueryBuilderError extends Error {}
+export class CustomQueryBuilderError extends Error {}
 
 type UnwrapRelation<T> = NonNullable<T> extends (infer U)[] ? U : NonNullable<T>;
 
@@ -57,7 +57,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     Object.keys(parameters || {}).forEach((key) => {
       const param = this.incrementParameter();
 
-      newCondition = newCondition.replace(new RegExp(`:${key}\\b`, 'g'), `:${param}`);
+      newCondition = newCondition.replace(new RegExp(`(?<!:):${key}\\b`, 'g'), `:${param}`);
       newParameters[param] = (parameters || {})[key];
     });
 
@@ -305,7 +305,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     if (lockMode === 'optimistic') {
       if (lockVersion === undefined) throw new Error('Lock version must be provided for optimistic locking');
 
-      res.qb.setLock(lockMode, lockVersion!);
+      res.qb.setLock(lockMode, lockVersion);
     } else {
       res.qb.setLock(lockMode);
     }
@@ -314,9 +314,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
   }
 
   delete() {
-    const res = this.clone();
-    res.qb.delete().execute();
-    return res;
+    return this.qb.clone().delete().execute();
   }
 
   update(updates: { [Key in keyof Entity]?: Entity[Key] | (() => string) }, parameters?: ObjectLiteral) {
@@ -337,7 +335,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
         let sqlExpression = (value as () => string)();
 
         Object.keys(parameterNameMap).forEach((originalName) => {
-          sqlExpression = sqlExpression.replace(new RegExp(`:${originalName}\\b`, 'g'), `:${parameterNameMap[originalName]}`);
+          sqlExpression = sqlExpression.replace(new RegExp(`(?<!:):${originalName}\\b`, 'g'), `:${parameterNameMap[originalName]}`);
         });
 
         setValues[key] = () => sqlExpression;

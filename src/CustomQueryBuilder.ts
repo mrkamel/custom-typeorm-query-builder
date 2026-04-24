@@ -11,13 +11,24 @@ type ResolveEntity<Entity, Chain extends readonly string[]> =
       : never
     : Entity;
 
-type ApplyPath<Entity, Path extends readonly string[]> =
+type ApplyPathInner<Entity, Path extends readonly string[]> =
   Path extends readonly [infer Head extends string, ...infer Tail extends readonly string[]]
     ? Head extends keyof Entity
       ? Entity & {
         [K in Head]-?: NonNullable<Entity[Head]> extends (infer U)[]
-          ? ApplyPath<NonNullable<U>, Tail>[]
-          : ApplyPath<NonNullable<Entity[Head]>, Tail>;
+          ? ApplyPathInner<NonNullable<U>, Tail>[]
+          : ApplyPathInner<NonNullable<Entity[Head]>, Tail>;
+      }
+      : Entity
+    : Entity;
+
+type ApplyPathLeft<Entity, Path extends readonly string[]> =
+  Path extends readonly [infer Head extends string, ...infer Tail extends readonly string[]]
+    ? Head extends keyof Entity
+      ? Entity & {
+        [K in Head]-?: NonNullable<Entity[Head]> extends (infer U)[]
+          ? ApplyPathLeft<NonNullable<U>, Tail>[]
+          : ApplyPathLeft<NonNullable<Entity[Head]>, Tail> | null;
       }
       : Entity
     : Entity;
@@ -44,13 +55,13 @@ type JoinSpec<Entity> =
 type ApplyEagerLoadsNested<Value, NestedSpec> =
   NonNullable<Value> extends (infer U)[]
     ? ApplyEagerLoads<NonNullable<U>, NestedSpec>[]
-    : ApplyEagerLoads<NonNullable<Value>, NestedSpec>;
+    : ApplyEagerLoads<NonNullable<Value>, NestedSpec> | null;
 
 type ApplyEagerLoads<Entity, Spec> =
   Spec extends readonly (infer Item)[]
     ? Entity & {
       [P in Extract<Item, keyof Entity>]-?:
-        NonNullable<Entity[P]> extends (infer U)[] ? NonNullable<U>[] : NonNullable<Entity[P]>;
+        NonNullable<Entity[P]> extends (infer U)[] ? NonNullable<U>[] : NonNullable<Entity[P]> | null;
     }
     : Spec extends Record<string, unknown>
       ? Entity & {
@@ -181,8 +192,8 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     newAlias: string,
     condition?: string,
     parameters?: ObjectLiteral,
-  ): QueryBuilder<ApplyPath<Entity, Path>, Projected> {
-    return this.clone<ApplyPath<Entity, Path>>().applyJoin('leftJoinAndSelect', relationPath, newAlias, condition, parameters);
+  ): QueryBuilder<ApplyPathLeft<Entity, Path>, Projected> {
+    return this.clone<ApplyPathLeft<Entity, Path>>().applyJoin('leftJoinAndSelect', relationPath, newAlias, condition, parameters);
   }
 
   leftJoin<const Path extends readonly string[]>(
@@ -199,8 +210,8 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     newAlias: string,
     condition?: string,
     parameters?: ObjectLiteral,
-  ): QueryBuilder<ApplyPath<Entity, Path>, Projected> {
-    return this.clone<ApplyPath<Entity, Path>>().applyJoin('innerJoinAndSelect', relationPath, newAlias, condition, parameters);
+  ): QueryBuilder<ApplyPathInner<Entity, Path>, Projected> {
+    return this.clone<ApplyPathInner<Entity, Path>>().applyJoin('innerJoinAndSelect', relationPath, newAlias, condition, parameters);
   }
 
   innerJoin<const Path extends readonly string[]>(

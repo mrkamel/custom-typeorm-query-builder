@@ -185,7 +185,7 @@ describe('CustomQueryBuilder', () => {
         .where({ id: alice.id })
         .getOne();
 
-      expect(result?.profile.bio).toBe('hello');
+      expect(result?.profile?.bio).toBe('hello');
     });
 
     it('accepts an array of relation names', async () => {
@@ -198,7 +198,7 @@ describe('CustomQueryBuilder', () => {
         .where({ id: alice.id })
         .getOne();
 
-      expect(result?.profile.bio).toBe('hello');
+      expect(result?.profile?.bio).toBe('hello');
       expect(result?.posts.map((post) => post.title)).toEqual(['one']);
     });
 
@@ -211,8 +211,8 @@ describe('CustomQueryBuilder', () => {
         .eagerLoads({ user: ['profile'] })
         .getOne();
 
-      expect(result?.user.id).toBe(alice.id);
-      expect(result?.user.profile.bio).toBe('hello');
+      expect(result?.user?.id).toBe(alice.id);
+      expect(result?.user?.profile?.bio).toBe('hello');
     });
 
     it('eager loads multiple relations at once', async () => {
@@ -226,7 +226,7 @@ describe('CustomQueryBuilder', () => {
         .where({ id: alice.id })
         .getOne();
 
-      expect(result?.profile.bio).toBe('hello');
+      expect(result?.profile?.bio).toBe('hello');
       expect(result?.posts.map((post) => post.title).sort()).toEqual(['one', 'two']);
     });
 
@@ -239,8 +239,8 @@ describe('CustomQueryBuilder', () => {
         .eagerLoads({ user: ['profile'] })
         .getOne();
 
-      expect(result?.user.id).toBe(alice.id);
-      expect(result?.user.profile.bio).toBe('hello');
+      expect(result?.user?.id).toBe(alice.id);
+      expect(result?.user?.profile?.bio).toBe('hello');
     });
 
     it('uses LEFT JOIN and keeps rows without the relation', async () => {

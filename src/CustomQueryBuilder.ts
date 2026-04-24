@@ -37,23 +37,26 @@ type RelationKey<Entity> = {
       : never;
 }[keyof Entity];
 
-type EagerLoadSpec<Entity> = {
-  [K in RelationKey<Entity>]?: true | EagerLoadSpec<UnwrapRelation<Entity[K]>>;
-};
+type EagerLoadSpec<Entity> =
+  | readonly RelationKey<Entity>[]
+  | { [K in RelationKey<Entity>]?: EagerLoadSpec<UnwrapRelation<Entity[K]>> };
+
+type ApplyEagerNested<Value, NestedSpec> =
+  NonNullable<Value> extends (infer U)[]
+    ? ApplyEagerLoad<NonNullable<U>, NestedSpec>[]
+    : ApplyEagerLoad<NonNullable<Value>, NestedSpec>;
 
 type ApplyEagerLoad<Entity, Spec> =
-  Spec extends Record<string, unknown>
+  Spec extends readonly (infer Item)[]
     ? Entity & {
-      [K in Extract<keyof Spec, keyof Entity>]-?:
-        NonNullable<Entity[K]> extends (infer U)[]
-          ? Spec[K] extends Record<string, unknown>
-            ? ApplyEagerLoad<NonNullable<U>, Spec[K]>[]
-            : NonNullable<U>[]
-          : Spec[K] extends Record<string, unknown>
-            ? ApplyEagerLoad<NonNullable<Entity[K]>, Spec[K]>
-            : NonNullable<Entity[K]>;
+      [P in Extract<Item, keyof Entity>]-?:
+        NonNullable<Entity[P]> extends (infer U)[] ? NonNullable<U>[] : NonNullable<Entity[P]>;
     }
-    : Entity;
+    : Spec extends Record<string, unknown>
+      ? Entity & {
+        [K in Extract<keyof Spec, keyof Entity>]-?: ApplyEagerNested<Entity[K], Spec[K]>;
+      }
+      : Entity;
 
 type QueryBuilder<Entity extends ObjectLiteral, Projected extends boolean = false> =
   Omit<CustomQueryBuilder<Entity, Projected>, Projected extends true ? 'getOne' | 'getMany' | 'getOneOrFail' : never>;
@@ -227,35 +230,58 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return res;
   }
 
-  eagerLoad<const Spec extends EagerLoadSpec<Entity>>(
-    spec: Spec,
-  ): QueryBuilder<ApplyEagerLoad<Entity, Spec>, Projected> {
+  eagerLoad<const Spec extends EagerLoadSpec<Entity>>(spec: Spec): QueryBuilder<ApplyEagerLoad<Entity, Spec>, Projected> {
     const res = this.clone<ApplyEagerLoad<Entity, Spec>>();
-    res.applyEagerLoadSpec(spec as Record<string, unknown>, res.alias, res.repository.metadata);
+
+    res.applyEagerLoadSpec({
+      spec: spec as Record<string, unknown> | readonly string[],
+      parentAlias: res.alias,
+      parentMetadata: res.repository.metadata,
+    });
+
     return res;
   }
 
   private applyEagerLoadSpec(
-    spec: Record<string, unknown>,
-    parentAlias: string,
-    parentMetadata: EntityMetadata,
+    { spec, parentAlias, parentMetadata }:
+    { spec: Record<string, unknown> | readonly string[], parentAlias: string, parentMetadata: EntityMetadata }
   ) {
-    Object.keys(spec).forEach((relation) => {
-      const relationMetadata = parentMetadata.findRelationWithPropertyPath(relation);
+    if (Array.isArray(spec)) {
+      spec.forEach((relation) => this.addEagerLoadRelation({ relation, nested: undefined, parentAlias, parentMetadata }));
+      return;
+    }
 
-      if (!relationMetadata) {
-        throw new CustomQueryBuilderError(`Relation "${relation}" not found on ${parentMetadata.name}`);
-      }
+    const obj = spec as Record<string, unknown>;
 
-      const newAlias = relationMetadata.inverseEntityMetadata.tableName;
-      this.qb.leftJoinAndSelect(`${parentAlias}.${relation}`, newAlias);
+    Object.keys(obj).forEach((relation) => this.addEagerLoadRelation({ relation, nested: obj[relation], parentAlias, parentMetadata }));
+  }
 
-      const nested = spec[relation];
-      
-      if (nested && typeof nested === 'object') {
-        this.applyEagerLoadSpec(nested as Record<string, unknown>, newAlias, relationMetadata.inverseEntityMetadata);
-      }
-    });
+  private addEagerLoadRelation(
+    { relation, nested, parentAlias, parentMetadata }:
+    {
+      relation: string,
+      nested: unknown,
+      parentAlias: string,
+      parentMetadata: EntityMetadata,
+    }
+  ) {
+    const relationMetadata = parentMetadata.findRelationWithPropertyPath(relation);
+
+    if (!relationMetadata) {
+      throw new CustomQueryBuilderError(`Relation "${relation}" not found on ${parentMetadata.name}`);
+    }
+
+    const newAlias = relationMetadata.inverseEntityMetadata.tableName;
+
+    this.qb.leftJoinAndSelect(`${parentAlias}.${relation}`, newAlias);
+
+    if (nested) {
+      this.applyEagerLoadSpec({
+        spec: nested as Record<string, unknown> | readonly string[],
+        parentAlias: newAlias,
+        parentMetadata: relationMetadata.inverseEntityMetadata,
+      });
+    }
   }
 
   loadRelationCountAndMap<const MapToProperty extends string, const Path extends readonly string[]>(

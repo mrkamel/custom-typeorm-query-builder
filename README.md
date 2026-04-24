@@ -99,29 +99,34 @@ await ApprovalRequestRepository.qb()
 
 ### Eager loading
 
-`eagerLoad()` hydrates relations via `LEFT JOIN AND SELECT` using a nested spec object. Keys are restricted to actual relation properties of the entity; scalar columns and unknown keys are rejected at the type level. The return type is narrowed so loaded relations become non-nullable.
+`eagerLoad()` hydrates relations via `LEFT JOIN AND SELECT`. The spec is
+either an array of relation names (leaves) or an object whose values are
+themselves specs (for nesting). Keys are restricted to actual relation
+properties of the entity; scalar columns and unknown keys are rejected at
+the type level. The return type is narrowed so loaded relations become
+non-nullable.
 
-Aliases are derived from the target entity's table name — so in the examples below the `profile` relation joins as `profiles`, `posts` as `posts`, and a nested `user` as `users`.
+Aliases are derived from the target entity's table name — so in the
+examples below the `profile` relation joins as `profiles`, `posts` as
+`posts`, and a nested `user` as `users`.
 
 ```ts
-// Single relation
-await UserRepository.qb().eagerLoad({ profile: true }).getMany();
+// Single or multiple leaves
+await UserRepository.qb().eagerLoad(['profile']).getMany();
+await UserRepository.qb().eagerLoad(['profile', 'posts']).getMany();
 
-// Multiple at once
-await UserRepository.qb().eagerLoad({ profile: true, posts: true }).getMany();
-
-// Nested
-await PostRepository.qb().eagerLoad({ user: { profile: true } }).getMany();
+// Nested — use an object at the level you want to nest, array (or object)
+// for the leaves
+await PostRepository.qb().eagerLoad({ user: ['profile'] }).getMany();
+await UserRepository.qb().eagerLoad({ posts: { user: ['profile'] } }).getMany();
 
 // The join alias matches the target table name, so you can reference it
 // in where clauses:
 await UserRepository.qb()
-  .eagerLoad({ profile: true })
+  .eagerLoad(['profile'])
   .where('profiles.bio = :bio', { bio: 'hello' })
   .getMany();
 ```
-
-The `true` leaf is a readability marker for "no nested relations here" — `{ profile: {} }` is equivalent.
 
 ### Counting a relation onto a property
 
@@ -156,7 +161,9 @@ await UserRepository.qb()
 
 ### Projection with `select`
 
-After `select(...)` the builder is "projected": `getOne` / `getMany` / `getOneOrFail` are removed at the type level (and throw at runtime) because the resulting rows would be missing entity fields. Use `getRawOne` / `getRawMany` instead:
+After `select(...)` the builder is "projected": `getOne` / `getMany` / `getOneOrFail`
+are removed at the type level (and throw at runtime) because the resulting rows
+would be missing entity fields. Use `getRawOne` / `getRawMany` instead:
 
 ```ts
 const projected = UserRepository.qb().select(['users.name', 'users.age']);

@@ -181,11 +181,38 @@ describe('CustomQueryBuilder', () => {
       await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
 
       const result = await UserRepository.qb()
-        .eagerLoad({ profile: true })
+        .eagerLoad(['profile'])
         .where({ id: alice.id })
         .getOne();
 
       expect(result?.profile.bio).toBe('hello');
+    });
+
+    it('accepts an array of relation names', async () => {
+      const alice = await createUser('alice', 30);
+      await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
+      await PostRepository.save({ title: 'one', user_id: alice.id });
+
+      const result = await UserRepository.qb()
+        .eagerLoad(['profile', 'posts'])
+        .where({ id: alice.id })
+        .getOne();
+
+      expect(result?.profile.bio).toBe('hello');
+      expect(result?.posts.map((post) => post.title)).toEqual(['one']);
+    });
+
+    it('accepts an array as the value of an object entry', async () => {
+      const alice = await createUser('alice', 30);
+      await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
+      await PostRepository.save({ title: 'one', user_id: alice.id });
+
+      const result = await PostRepository.qb()
+        .eagerLoad({ user: ['profile'] })
+        .getOne();
+
+      expect(result?.user.id).toBe(alice.id);
+      expect(result?.user.profile.bio).toBe('hello');
     });
 
     it('eager loads multiple relations at once', async () => {
@@ -195,7 +222,7 @@ describe('CustomQueryBuilder', () => {
       await PostRepository.save({ title: 'two', user_id: alice.id });
 
       const result = await UserRepository.qb()
-        .eagerLoad({ profile: true, posts: true })
+        .eagerLoad(['profile', 'posts'])
         .where({ id: alice.id })
         .getOne();
 
@@ -209,7 +236,7 @@ describe('CustomQueryBuilder', () => {
       await PostRepository.save({ title: 'one', user_id: alice.id });
 
       const result = await PostRepository.qb()
-        .eagerLoad({ user: { profile: true } })
+        .eagerLoad({ user: ['profile'] })
         .getOne();
 
       expect(result?.user.id).toBe(alice.id);
@@ -222,7 +249,7 @@ describe('CustomQueryBuilder', () => {
       await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
 
       const result = await UserRepository.qb()
-        .eagerLoad({ profile: true })
+        .eagerLoad(['profile'])
         .orderBy({ name: 'ASC' })
         .getMany();
 
@@ -237,7 +264,7 @@ describe('CustomQueryBuilder', () => {
       await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
 
       const result = await UserRepository.qb()
-        .eagerLoad({ profile: true })
+        .eagerLoad(['profile'])
         .where('profiles.bio = :bio', { bio: 'hello' })
         .getMany();
 
@@ -247,21 +274,15 @@ describe('CustomQueryBuilder', () => {
     it('rejects unknown relations at the type level', () => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const _typeOnly = () => {
-        UserRepository.qb().eagerLoad({
-          // @ts-expect-error nonexistent is not a relation on UserEntity
-          nonexistent: true,
-        });
+        // @ts-expect-error nonexistent is not a relation on UserEntity
+        UserRepository.qb().eagerLoad(['nonexistent']);
+
+        // @ts-expect-error name is a scalar column, not a relation
+        UserRepository.qb().eagerLoad(['name']);
 
         UserRepository.qb().eagerLoad({
-          // @ts-expect-error name is a scalar column, not a relation
-          name: true,
-        });
-
-        UserRepository.qb().eagerLoad({
-          posts: {
-            // @ts-expect-error title is a scalar, not a relation on PostEntity
-            title: true,
-          },
+          // @ts-expect-error title is a scalar, not a relation on PostEntity
+          posts: ['title'],
         });
       };
     });

@@ -197,6 +197,23 @@ await UserRepository.qb()
   .getRawMany();
 ```
 
+When `sort` is a raw string and you need bound parameters, pass them as the
+second argument and embed the direction in the SQL itself. Names are
+rewritten the same way as in `where()`, so they can't collide with
+parameters used elsewhere in the chain:
+
+```ts
+await TermPolicyRepository.qb()
+  .orderBy('ts_rank(search_vector, to_tsquery(\'simple\', :q)) DESC', { q: prefixQuery })
+  .getMany();
+
+// Same name reused across where + orderBy is safe — both get rewritten:
+await UserRepository.qb()
+  .where('users.age >= :value', { value: 40 })
+  .orderBy('ABS(users.age - :value) ASC', { value: 45 })
+  .getMany();
+```
+
 `skip` / `take` are the ORM-level pagination knobs — they become `OFFSET` /
 `LIMIT` for simple queries, and switch to TypeORM's distinct-alias two-query
 strategy when combined with a `*-to-many` eager load. `limit(n)` is a raw

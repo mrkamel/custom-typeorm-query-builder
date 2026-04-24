@@ -550,6 +550,44 @@ describe('CustomQueryBuilder', () => {
       expect(result.map((user) => user.name)).toEqual(['carol', 'bob', 'alice']);
     });
 
+    it('accepts parameters with direction embedded in the sort', async () => {
+      const alice = await createUser('alice', 30);
+      const bob = await createUser('bob', 40);
+      await createUser('carol', 50);
+
+      const result = await UserRepository.qb()
+        .orderBy('ABS(users.age - :target) ASC', { target: 45 })
+        .getMany();
+
+      expect(result.map((user) => user.name)).toEqual(['bob', 'carol', 'alice']);
+      expect(result[0].id).toBe(bob.id);
+      expect(result[2].id).toBe(alice.id);
+    });
+
+    it('rewrites parameter names to avoid collision with a chained where', async () => {
+      await createUser('alice', 30);
+      const bob = await createUser('bob', 40);
+      const carol = await createUser('carol', 50);
+
+      const result = await UserRepository.qb()
+        .where('users.age >= :value', { value: 40 })
+        .orderBy('ABS(users.age - :value) ASC', { value: 45 })
+        .getMany();
+
+      expect(result.map((user) => user.id)).toEqual([bob.id, carol.id]);
+    });
+
+    it('does not emit a trailing default ASC after an embedded DESC', async () => {
+      await createUser('alice', 30);
+      await createUser('bob', 40);
+
+      const sql = UserRepository.qb().orderBy('ABS(users.age - :target) DESC', { target: 45 }).getSql();
+      expect(sql).not.toMatch(/DESC\s+ASC/);
+
+      const result = await UserRepository.qb().orderBy('ABS(users.age - :target) DESC', { target: 45 }).getMany();
+      expect(result.map((user) => user.name)).toEqual(['alice', 'bob']);
+    });
+
     it('survives the distinctAlias pagination path (take + *-to-many eager load)', async () => {
       const alice = await createUser('alice', 30);
       const bob = await createUser('bob', 40);

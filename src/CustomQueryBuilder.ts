@@ -367,9 +367,22 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this.clone<Entity & { [Key in MapToProperty]-?: number }>().applyLoadRelationCountAndMap(mapTo, relationPath, alias, condition, parameters);
   }
 
-  private applyOrderBy(sort: string | { [Key in keyof Entity]?: 'ASC' | 'DESC' }, order?: 'ASC' | 'DESC' | undefined) {
-    if (typeof sort === 'string') {
-      this.qb.addOrderBy(sort, order);
+  private applyOrderBy(
+    sort: string | { [Key in keyof Entity]?: 'ASC' | 'DESC' },
+    orderOrParameters?: 'ASC' | 'DESC' | ObjectLiteral,
+  ) {
+    if (typeof sort === 'string' && typeof orderOrParameters === 'string') {
+      this.qb.addOrderBy(sort, orderOrParameters);
+    } else if (typeof sort === 'string' && typeof orderOrParameters === 'object') {
+      const match = sort.match(/\s+(ASC|DESC)\s*$/i);
+      const finalSort = match ? sort.slice(0, match.index) : sort;
+      const order = match ? (match[1].toUpperCase() as 'ASC' | 'DESC') : undefined;
+      const { newCondition, newParameters } = this.rewriteParameters(finalSort, orderOrParameters);
+
+      this.qb.setParameters(newParameters);
+      this.qb.addOrderBy(newCondition, order);
+    } else if (typeof sort === 'string') {
+      this.qb.addOrderBy(sort);
     } else {
       Object.keys(sort).forEach((key) => {
         // TypeORM's take + *-to-many pagination forces us to pass it without quoting.
@@ -380,8 +393,14 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this;
   }
 
-  orderBy(sort: string | { [Key in keyof Entity]?: 'ASC' | 'DESC' }, order?: 'ASC' | 'DESC' | undefined): QueryBuilder<Entity, Projected> {
-    return this.clone().applyOrderBy(sort, order);
+  orderBy(sort: string, order?: 'ASC' | 'DESC'): QueryBuilder<Entity, Projected>;
+  orderBy(sort: string, parameters: ObjectLiteral): QueryBuilder<Entity, Projected>;
+  orderBy(sort: { [Key in keyof Entity]?: 'ASC' | 'DESC' }): QueryBuilder<Entity, Projected>;
+  orderBy(
+    sort: string | { [Key in keyof Entity]?: 'ASC' | 'DESC' },
+    orderOrParameters?: 'ASC' | 'DESC' | ObjectLiteral,
+  ): QueryBuilder<Entity, Projected> {
+    return this.clone().applyOrderBy(sort, orderOrParameters);
   }
 
   private applyGroupBy(group: string) {

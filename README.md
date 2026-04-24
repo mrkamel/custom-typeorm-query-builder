@@ -99,7 +99,7 @@ await ApprovalRequestRepository.qb()
 
 ### Eager loading
 
-`eagerLoad()` hydrates relations via `LEFT JOIN AND SELECT`. The spec is
+`eagerLoads()` hydrates relations via `LEFT JOIN AND SELECT`. The spec is
 either an array of relation names (leaves) or an object whose values are
 themselves specs (for nesting). Keys are restricted to actual relation
 properties of the entity; scalar columns and unknown keys are rejected at
@@ -112,21 +112,44 @@ examples below the `profile` relation joins as `profiles`, `posts` as
 
 ```ts
 // Single or multiple leaves
-await UserRepository.qb().eagerLoad(['profile']).getMany();
-await UserRepository.qb().eagerLoad(['profile', 'posts']).getMany();
+await UserRepository.qb().eagerLoads(['profile']).getMany();
+await UserRepository.qb().eagerLoads(['profile', 'posts']).getMany();
 
 // Nested — use an object at the level you want to nest, array (or object)
 // for the leaves
-await PostRepository.qb().eagerLoad({ user: ['profile'] }).getMany();
-await UserRepository.qb().eagerLoad({ posts: { user: ['profile'] } }).getMany();
+await PostRepository.qb().eagerLoads({ user: ['profile'] }).getMany();
+await UserRepository.qb().eagerLoads({ posts: { user: ['profile'] } }).getMany();
 
 // The join alias matches the target table name, so you can reference it
 // in where clauses:
 await UserRepository.qb()
-  .eagerLoad(['profile'])
+  .eagerLoads(['profile'])
   .where('profiles.bio = :bio', { bio: 'hello' })
   .getMany();
 ```
+
+### Joining without hydrating (`joins` / `leftJoins`)
+
+`joins()` and `leftJoins()` mirror `eagerLoads()` — same array/object spec, same table-name aliases — but do **not** select the joined columns. Use them when you want to filter or order by a related table without paying to hydrate it.
+
+- `joins(spec)` → `INNER JOIN` (drops rows without a match)
+- `leftJoins(spec)` → `LEFT JOIN` (keeps rows without a match)
+
+```ts
+// Only return users that have a profile
+await UserRepository.qb().joins(['profile']).getMany();
+
+// Keep everyone, but expose the profiles alias for filtering/ordering
+await UserRepository.qb()
+  .leftJoins(['profile'])
+  .where('profiles.bio IS NOT NULL')
+  .getMany();
+
+// Nested
+await PostRepository.qb().joins({ user: ['profile'] }).getMany();
+```
+
+The return type is unchanged — relations are not hydrated, so they remain optional on the entity.
 
 ### Counting a relation onto a property
 

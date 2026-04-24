@@ -669,6 +669,24 @@ describe('CustomQueryBuilder', () => {
     });
   });
 
+  describe('getRawQueryBuilder', () => {
+    it('returns a cloned TypeORM query builder with the accumulated state', async () => {
+      const alice = await createUser('alice', 30);
+      await createUser('bob', 40);
+
+      const custom = UserRepository.qb().where({ name: 'alice' });
+      const raw = custom.getRawQueryBuilder();
+
+      const result = await raw.getMany();
+      expect(result.map((user) => user.id)).toEqual([alice.id]);
+
+      // Mutating the returned builder does not affect the wrapper.
+      raw.andWhere('1 = 0');
+      const untouched = await custom.getMany();
+      expect(untouched.map((user) => user.id)).toEqual([alice.id]);
+    });
+  });
+
   describe('getCount', () => {
     it('returns the number of matching rows', async () => {
       await createUser('alice', 30);

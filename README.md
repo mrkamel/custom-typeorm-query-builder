@@ -130,7 +130,9 @@ await UserRepository.qb()
 
 ### Joining without hydrating (`joins` / `leftJoins`)
 
-`joins()` and `leftJoins()` mirror `eagerLoads()` — same array/object spec, same table-name aliases — but do **not** select the joined columns. Use them when you want to filter or order by a related table without paying to hydrate it.
+`joins()` and `leftJoins()` mirror `eagerLoads()` — same array/object spec, same table-name
+aliases — but do **not** select the joined columns. Use them when you want to filter or
+order by a related table without paying to hydrate it.
 
 - `joins(spec)` → `INNER JOIN` (drops rows without a match)
 - `leftJoins(spec)` → `LEFT JOIN` (keeps rows without a match)
@@ -150,6 +152,19 @@ await PostRepository.qb().joins({ user: ['profile'] }).getMany();
 ```
 
 The return type is unchanged — relations are not hydrated, so they remain optional on the entity.
+
+### `eagerJoins` — filter and hydrate
+
+`eagerJoins()` is the `INNER JOIN + SELECT` counterpart of `eagerLoads()`:
+it hydrates the relation *and* drops rows without a match. Same spec and
+alias rules. Unlike `eagerLoads` (which keeps relations nullable to reflect
+the LEFT JOIN), the return type marks loaded relations as non-null.
+
+```ts
+// Only users that have a profile; `profile` is typed as present
+const users = await UserRepository.qb().eagerJoins(['profile']).getMany();
+users[0].profile.bio; // no optional chaining needed
+```
 
 ### Counting a relation onto a property
 
@@ -182,6 +197,22 @@ await UserRepository.qb()
   .getRawMany();
 ```
 
+`skip` / `take` are the ORM-level pagination knobs — they become `OFFSET` /
+`LIMIT` for simple queries, and switch to TypeORM's distinct-alias two-query
+strategy when combined with a `*-to-many` eager load. `limit(n)` is a raw
+`LIMIT` only — no offset, no pagination rewrites. Use it when you want a
+hard cap on rows without TypeORM touching the query shape.
+
+### `distinct`
+
+```ts
+// SELECT DISTINCT ...
+await UserRepository.qb().distinct().getMany();
+
+// Opt back out on a cloned chain
+await base.distinct(false).getMany();
+```
+
 ### Projection with `select`
 
 After `select(...)` the builder is "projected": `getOne` / `getMany` / `getOneOrFail`
@@ -207,6 +238,26 @@ await UserRepository.qb()
   .update({ age: () => '"age" + :inc' }, { inc: 1 });
 ```
 
+### Deletes
+
+`delete()` runs `DELETE FROM ... WHERE ...` against the matching rows. It
+executes immediately (no `.getMany()` — this is a terminal call) and
+returns the TypeORM `DeleteResult`.
+
+```ts
+await UserRepository.qb().where({ id }).delete();
+await UserRepository.qb().where('users.age < :cutoff', { cutoff: 18 }).delete();
+```
+
+### Inspecting the generated SQL
+
+`getSql()` returns the SQL TypeORM would emit for the current chain — handy
+for debugging or asserting structure in tests without hitting the database.
+
+```ts
+const sql = UserRepository.qb().where({ id }).getSql();
+```
+
 ### Counting and existence
 
 ```ts
@@ -222,6 +273,22 @@ await UserRepository.qb()
   .setLock('pessimistic_write')
   .getOne();
 ```
+
+### Escape hatch: `getRawQueryBuilder`
+
+When you need something our wrapper doesn't cover (custom CTEs, vendor-specific SQL, driver-level
+methods, etc.), drop down to the underlying TypeORM `SelectQueryBuilder`:
+
+```ts
+const raw = UserRepository.qb()
+  .where({ active: true })
+  .getRawQueryBuilder();
+
+raw.addCommonTableExpression(/* ... */).addOrderBy(/* ... */);
+const rows = await raw.getMany();
+```
+
+The returned builder is a clone, so mutating it never leaks back into the wrapper you called it on.
 
 ### Immutability
 

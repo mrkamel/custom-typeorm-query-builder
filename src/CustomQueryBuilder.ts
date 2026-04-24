@@ -121,6 +121,10 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return { newCondition, newParameters };
   }
 
+  getRawQueryBuilder() {
+    return this.qb.clone();
+  }
+
   clone<NewEntity extends ObjectLiteral = Entity, NewProjected extends boolean = Projected>(): CustomQueryBuilder<NewEntity, NewProjected> {
     const res = new CustomQueryBuilder<NewEntity, NewProjected>(this.repository as unknown as Repository<NewEntity>, this.alias);
 

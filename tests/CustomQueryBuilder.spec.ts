@@ -175,6 +175,98 @@ describe('CustomQueryBuilder', () => {
     });
   });
 
+  describe('eagerLoad', () => {
+    it('eager loads a single to-one relation', async () => {
+      const alice = await createUser('alice', 30);
+      await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
+
+      const result = await UserRepository.qb()
+        .eagerLoad({ profile: true })
+        .where({ id: alice.id })
+        .getOne();
+
+      expect(result?.profile.bio).toBe('hello');
+    });
+
+    it('eager loads multiple relations at once', async () => {
+      const alice = await createUser('alice', 30);
+      await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
+      await PostRepository.save({ title: 'one', user_id: alice.id });
+      await PostRepository.save({ title: 'two', user_id: alice.id });
+
+      const result = await UserRepository.qb()
+        .eagerLoad({ profile: true, posts: true })
+        .where({ id: alice.id })
+        .getOne();
+
+      expect(result?.profile.bio).toBe('hello');
+      expect(result?.posts.map((post) => post.title).sort()).toEqual(['one', 'two']);
+    });
+
+    it('eager loads nested relations using target table names as aliases', async () => {
+      const alice = await createUser('alice', 30);
+      await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
+      await PostRepository.save({ title: 'one', user_id: alice.id });
+
+      const result = await PostRepository.qb()
+        .eagerLoad({ user: { profile: true } })
+        .getOne();
+
+      expect(result?.user.id).toBe(alice.id);
+      expect(result?.user.profile.bio).toBe('hello');
+    });
+
+    it('uses LEFT JOIN and keeps rows without the relation', async () => {
+      const alice = await createUser('alice', 30);
+      const bob = await createUser('bob', 40);
+      await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
+
+      const result = await UserRepository.qb()
+        .eagerLoad({ profile: true })
+        .orderBy({ name: 'ASC' })
+        .getMany();
+
+      expect(result.map((user) => user.id)).toEqual([alice.id, bob.id]);
+      expect(result[0].profile?.bio).toBe('hello');
+      expect(result[1].profile).toBeNull();
+    });
+
+    it('exposes the join alias for use in where clauses', async () => {
+      const alice = await createUser('alice', 30);
+      await createUser('bob', 40);
+      await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
+
+      const result = await UserRepository.qb()
+        .eagerLoad({ profile: true })
+        .where('profiles.bio = :bio', { bio: 'hello' })
+        .getMany();
+
+      expect(result.map((user) => user.id)).toEqual([alice.id]);
+    });
+
+    it('rejects unknown relations at the type level', () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const _typeOnly = () => {
+        UserRepository.qb().eagerLoad({
+          // @ts-expect-error nonexistent is not a relation on UserEntity
+          nonexistent: true,
+        });
+
+        UserRepository.qb().eagerLoad({
+          // @ts-expect-error name is a scalar column, not a relation
+          name: true,
+        });
+
+        UserRepository.qb().eagerLoad({
+          posts: {
+            // @ts-expect-error title is a scalar, not a relation on PostEntity
+            title: true,
+          },
+        });
+      };
+    });
+  });
+
   describe('loadRelationCountAndMap', () => {
     it('counts a relation and maps the result onto a property', async () => {
       const alice = await createUser('alice', 30);

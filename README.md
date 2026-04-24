@@ -97,6 +97,32 @@ await ApprovalRequestRepository.qb()
   .getMany();
 ```
 
+### Eager loading
+
+`eagerLoad()` hydrates relations via `LEFT JOIN AND SELECT` using a nested spec object. Keys are restricted to actual relation properties of the entity; scalar columns and unknown keys are rejected at the type level. The return type is narrowed so loaded relations become non-nullable.
+
+Aliases are derived from the target entity's table name — so in the examples below the `profile` relation joins as `profiles`, `posts` as `posts`, and a nested `user` as `users`.
+
+```ts
+// Single relation
+await UserRepository.qb().eagerLoad({ profile: true }).getMany();
+
+// Multiple at once
+await UserRepository.qb().eagerLoad({ profile: true, posts: true }).getMany();
+
+// Nested
+await PostRepository.qb().eagerLoad({ user: { profile: true } }).getMany();
+
+// The join alias matches the target table name, so you can reference it
+// in where clauses:
+await UserRepository.qb()
+  .eagerLoad({ profile: true })
+  .where('profiles.bio = :bio', { bio: 'hello' })
+  .getMany();
+```
+
+The `true` leaf is a readability marker for "no nested relations here" — `{ profile: {} }` is equivalent.
+
 ### Counting a relation onto a property
 
 ```ts

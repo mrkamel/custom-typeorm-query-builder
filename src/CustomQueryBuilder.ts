@@ -1,4 +1,4 @@
-import type { ObjectLiteral, Repository } from 'typeorm';
+import type { ObjectLiteral, Repository, EntityMetadata } from 'typeorm';
 
 export class CustomQueryBuilderError extends Error {}
 
@@ -28,6 +28,32 @@ type DottedRelation<Entity, Path extends readonly string[]> =
       ? `${string}.${Leaf}`
       : never
     : never;
+
+type RelationKey<Entity> = {
+  [K in keyof Entity]-?: NonNullable<Entity[K]> extends Date
+    ? never
+    : NonNullable<Entity[K]> extends object
+      ? K
+      : never;
+}[keyof Entity];
+
+type EagerLoadSpec<Entity> = {
+  [K in RelationKey<Entity>]?: true | EagerLoadSpec<UnwrapRelation<Entity[K]>>;
+};
+
+type ApplyEagerLoad<Entity, Spec> =
+  Spec extends Record<string, unknown>
+    ? Entity & {
+      [K in Extract<keyof Spec, keyof Entity>]-?:
+        NonNullable<Entity[K]> extends (infer U)[]
+          ? Spec[K] extends Record<string, unknown>
+            ? ApplyEagerLoad<NonNullable<U>, Spec[K]>[]
+            : NonNullable<U>[]
+          : Spec[K] extends Record<string, unknown>
+            ? ApplyEagerLoad<NonNullable<Entity[K]>, Spec[K]>
+            : NonNullable<Entity[K]>;
+    }
+    : Entity;
 
 type QueryBuilder<Entity extends ObjectLiteral, Projected extends boolean = false> =
   Omit<CustomQueryBuilder<Entity, Projected>, Projected extends true ? 'getOne' | 'getMany' | 'getOneOrFail' : never>;
@@ -199,6 +225,37 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     }
 
     return res;
+  }
+
+  eagerLoad<const Spec extends EagerLoadSpec<Entity>>(
+    spec: Spec,
+  ): QueryBuilder<ApplyEagerLoad<Entity, Spec>, Projected> {
+    const res = this.clone<ApplyEagerLoad<Entity, Spec>>();
+    res.applyEagerLoadSpec(spec as Record<string, unknown>, res.alias, res.repository.metadata);
+    return res;
+  }
+
+  private applyEagerLoadSpec(
+    spec: Record<string, unknown>,
+    parentAlias: string,
+    parentMetadata: EntityMetadata,
+  ) {
+    Object.keys(spec).forEach((relation) => {
+      const relationMetadata = parentMetadata.findRelationWithPropertyPath(relation);
+
+      if (!relationMetadata) {
+        throw new CustomQueryBuilderError(`Relation "${relation}" not found on ${parentMetadata.name}`);
+      }
+
+      const newAlias = relationMetadata.inverseEntityMetadata.tableName;
+      this.qb.leftJoinAndSelect(`${parentAlias}.${relation}`, newAlias);
+
+      const nested = spec[relation];
+      
+      if (nested && typeof nested === 'object') {
+        this.applyEagerLoadSpec(nested as Record<string, unknown>, newAlias, relationMetadata.inverseEntityMetadata);
+      }
+    });
   }
 
   loadRelationCountAndMap<const MapToProperty extends string, const Path extends readonly string[]>(

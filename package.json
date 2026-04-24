@@ -13,7 +13,7 @@
     "test": "vitest --run",
     "test:watch": "vitest",
     "lint": "eslint . --fix",
-    "prepublishOnly": "yarn build"
+    "prepack": "rm -rf dist && yarn build"
   },
   "keywords": [
     "typeorm",

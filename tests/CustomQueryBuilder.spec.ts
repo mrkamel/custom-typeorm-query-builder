@@ -70,6 +70,27 @@ describe('CustomQueryBuilder', () => {
       expect(result.map((user) => user.id)).toEqual([alice.id]);
     });
 
+    it('does not rewrite parameters inside postgres :: casts', async () => {
+      const alice = await createUser('alice', 30);
+
+      const result = await UserRepository.qb()
+        .where('users.age::int = :int', { int: 30 })
+        .getMany();
+
+      expect(result.map((user) => user.id)).toEqual([alice.id]);
+    });
+
+    it('respects word boundaries so a parameter name is not a prefix of another', async () => {
+      const alice = await createUser('alice', 30);
+      await createUser('bob', 40);
+
+      const result = await UserRepository.qb()
+        .where('users.name = :a AND users.age = :age', { a: 'alice', age: 30 })
+        .getMany();
+
+      expect(result.map((user) => user.id)).toEqual([alice.id]);
+    });
+
     it('returns a new instance without mutating the original', async () => {
       await createUser('alice', 30);
       await createUser('bob', 40);
@@ -82,6 +103,30 @@ describe('CustomQueryBuilder', () => {
 
       expect(baseResult).toHaveLength(2);
       expect(filteredResult).toHaveLength(1);
+    });
+
+    it('isolates branched builders with mixed join / select / where chains', async () => {
+      const alice = await createUser('alice', 30);
+      const bob = await createUser('bob', 40);
+      await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
+
+      const base = UserRepository.qb()
+        .leftJoin<['profile']>('users.profile', 'profile')
+        .where('users.age >= :min', { min: 20 });
+
+      const onlyAlice = base.where({ name: 'alice' });
+      const onlyWithProfile = base.where('profile.bio IS NOT NULL');
+      const projected = base.select(['users.name']);
+
+      const aliceResult = await onlyAlice.getMany();
+      const profileResult = await onlyWithProfile.getMany();
+      const baseResult = await base.getMany();
+      const projectedRows = await projected.getRawMany();
+
+      expect(aliceResult.map((user) => user.id)).toEqual([alice.id]);
+      expect(profileResult.map((user) => user.id)).toEqual([alice.id]);
+      expect(baseResult.map((user) => user.id).sort()).toEqual([alice.id, bob.id].sort());
+      expect(projectedRows.map((row) => row.users_name).sort()).toEqual(['alice', 'bob']);
     });
   });
 
@@ -385,9 +430,7 @@ describe('CustomQueryBuilder', () => {
       const alice = await createUser('alice', 30);
       await createUser('bob', 40);
 
-      UserRepository.qb().where({ id: alice.id }).delete();
-
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await UserRepository.qb().where({ id: alice.id }).delete();
 
       const remaining = await UserRepository.find();
       expect(remaining.map((user) => user.name)).toEqual(['bob']);

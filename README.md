@@ -1,4 +1,4 @@
-# Custom typeorm query builder
+# Custom TypeORM Query Builder
 
 A type-safe wrapper around TypeORM's `SelectQueryBuilder` with:
 

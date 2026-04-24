@@ -69,6 +69,23 @@ type ApplyEagerLoads<Entity, Spec> =
       }
       : Entity;
 
+type ApplyEagerJoinsNested<Value, NestedSpec> =
+  NonNullable<Value> extends (infer U)[]
+    ? ApplyEagerJoins<NonNullable<U>, NestedSpec>[]
+    : ApplyEagerJoins<NonNullable<Value>, NestedSpec>;
+
+type ApplyEagerJoins<Entity, Spec> =
+  Spec extends readonly (infer Item)[]
+    ? Entity & {
+      [P in Extract<Item, keyof Entity>]-?:
+        NonNullable<Entity[P]> extends (infer U)[] ? NonNullable<U>[] : NonNullable<Entity[P]>;
+    }
+    : Spec extends Record<string, unknown>
+      ? Entity & {
+        [K in Extract<keyof Spec, keyof Entity>]-?: ApplyEagerJoinsNested<Entity[K], Spec[K]>;
+      }
+      : Entity;
+
 type QueryBuilder<Entity extends ObjectLiteral, Projected extends boolean = false> =
   Omit<CustomQueryBuilder<Entity, Projected>, Projected extends true ? 'getOne' | 'getMany' | 'getOneOrFail' : never>;
 
@@ -229,7 +246,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
       spec: Record<string, unknown> | readonly string[],
       parentAlias: string,
       parentMetadata: EntityMetadata,
-      mode: 'leftJoinAndSelect' | 'innerJoin' | 'leftJoin',
+      mode: 'leftJoinAndSelect' | 'innerJoinAndSelect' | 'innerJoin' | 'leftJoin',
     }
   ) {
     if (Array.isArray(spec)) {
@@ -251,7 +268,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
       nested: unknown,
       parentAlias: string,
       parentMetadata: EntityMetadata,
-      mode: 'leftJoinAndSelect' | 'innerJoin' | 'leftJoin',
+      mode: 'leftJoinAndSelect' | 'innerJoinAndSelect' | 'innerJoin' | 'leftJoin',
     }
   ) {
     const relationMetadata = parentMetadata.findRelationWithPropertyPath(relation);
@@ -283,6 +300,17 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
       parentMetadata: res.repository.metadata,
       mode: 'leftJoinAndSelect',
     }) as unknown as QueryBuilder<ApplyEagerLoads<Entity, Spec>, Projected>;
+  }
+
+  eagerJoins<const Spec extends JoinSpec<Entity>>(spec: Spec): QueryBuilder<ApplyEagerJoins<Entity, Spec>, Projected> {
+    const res = this.clone<ApplyEagerJoins<Entity, Spec>>();
+
+    return res.applyRelationSpec({
+      spec: spec as Record<string, unknown> | readonly string[],
+      parentAlias: res.alias,
+      parentMetadata: res.repository.metadata,
+      mode: 'innerJoinAndSelect',
+    }) as unknown as QueryBuilder<ApplyEagerJoins<Entity, Spec>, Projected>;
   }
 
   joins<const Spec extends JoinSpec<Entity>>(spec: Spec): QueryBuilder<Entity, Projected> {

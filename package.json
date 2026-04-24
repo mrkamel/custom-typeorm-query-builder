@@ -1,6 +1,6 @@
 {
   "name": "custom-typeorm-query-builder",
-  "version": "0.1.0",
+  "version": "0.2.0-beta.0",
   "description": "A type-safe wrapper around TypeORM's query builder with immutable chaining and stricter relation typing.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

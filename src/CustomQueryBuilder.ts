@@ -59,8 +59,15 @@ type RelationKey<Entity> = {
       : never;
 }[keyof Entity];
 
+type UnionToIntersection<Union> =
+  (Union extends unknown ? (k: Union) => void : never) extends (k: infer Intersection) => void ? Intersection : never;
+
+type JoinSpecItem<Entity> =
+  | RelationKey<Entity>
+  | { [K in RelationKey<Entity>]?: JoinSpec<UnwrapRelation<Entity[K]>> };
+
 type JoinSpec<Entity> =
-  | readonly RelationKey<Entity>[]
+  | readonly JoinSpecItem<Entity>[]
   | { [K in RelationKey<Entity>]?: JoinSpec<UnwrapRelation<Entity[K]>> };
 
 type ApplyLeftJoinsAndSelectNested<Value, NestedSpec> =
@@ -68,12 +75,16 @@ type ApplyLeftJoinsAndSelectNested<Value, NestedSpec> =
     ? ApplyLeftJoinsAndSelect<NonNullable<U>, NestedSpec>[]
     : ApplyLeftJoinsAndSelect<NonNullable<Value>, NestedSpec> | null;
 
+type ApplyLeftJoinsAndSelectArrayItem<Entity, Item> =
+  Item extends keyof Entity
+    ? { [P in Item]-?: NonNullable<Entity[P]> extends (infer U)[] ? NonNullable<U>[] : NonNullable<Entity[P]> | null }
+    : Item extends Record<string, unknown>
+      ? { [K in Extract<keyof Item, keyof Entity>]-?: ApplyLeftJoinsAndSelectNested<Entity[K], Item[K]> }
+      : never;
+
 type ApplyLeftJoinsAndSelect<Entity, Spec> =
   Spec extends readonly (infer Item)[]
-    ? Entity & {
-      [P in Extract<Item, keyof Entity>]-?:
-        NonNullable<Entity[P]> extends (infer U)[] ? NonNullable<U>[] : NonNullable<Entity[P]> | null;
-    }
+    ? Entity & UnionToIntersection<ApplyLeftJoinsAndSelectArrayItem<Entity, Item>>
     : Spec extends Record<string, unknown>
       ? Entity & {
         [K in Extract<keyof Spec, keyof Entity>]-?: ApplyLeftJoinsAndSelectNested<Entity[K], Spec[K]>;
@@ -85,12 +96,16 @@ type ApplyJoinsAndSelectNested<Value, NestedSpec> =
     ? ApplyJoinsAndSelect<NonNullable<U>, NestedSpec>[]
     : ApplyJoinsAndSelect<NonNullable<Value>, NestedSpec>;
 
+type ApplyJoinsAndSelectArrayItem<Entity, Item> =
+  Item extends keyof Entity
+    ? { [P in Item]-?: NonNullable<Entity[P]> extends (infer U)[] ? NonNullable<U>[] : NonNullable<Entity[P]> }
+    : Item extends Record<string, unknown>
+      ? { [K in Extract<keyof Item, keyof Entity>]-?: ApplyJoinsAndSelectNested<Entity[K], Item[K]> }
+      : never;
+
 type ApplyJoinsAndSelect<Entity, Spec> =
   Spec extends readonly (infer Item)[]
-    ? Entity & {
-      [P in Extract<Item, keyof Entity>]-?:
-        NonNullable<Entity[P]> extends (infer U)[] ? NonNullable<U>[] : NonNullable<Entity[P]>;
-    }
+    ? Entity & UnionToIntersection<ApplyJoinsAndSelectArrayItem<Entity, Item>>
     : Spec extends Record<string, unknown>
       ? Entity & {
         [K in Extract<keyof Spec, keyof Entity>]-?: ApplyJoinsAndSelectNested<Entity[K], Spec[K]>;
@@ -276,14 +291,23 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
   private applyRelationSpec(
     { spec, parentAlias, parentMetadata, mode }:
     {
-      spec: Record<string, unknown> | readonly string[],
+      spec: Record<string, unknown> | readonly (string | Record<string, unknown>)[],
       parentAlias: string,
       parentMetadata: EntityMetadata,
       mode: 'leftJoinAndSelect' | 'innerJoinAndSelect' | 'innerJoin' | 'leftJoin',
     }
   ) {
     if (Array.isArray(spec)) {
-      spec.forEach((relation) => this.addJoinedRelation({ relation, nested: undefined, parentAlias, parentMetadata, mode }));
+      spec.forEach((item) => {
+        if (typeof item === 'string') {
+          this.addJoinedRelation({ relation: item, nested: undefined, parentAlias, parentMetadata, mode });
+        } else {
+          const nestedObj = item as Record<string, unknown>;
+
+          Object.keys(nestedObj).forEach((relation) => this.addJoinedRelation({ relation, nested: nestedObj[relation], parentAlias, parentMetadata, mode }));
+        }
+      });
+
       return this;
     }
 
@@ -316,7 +340,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
 
     if (nested) {
       this.applyRelationSpec({
-        spec: nested as Record<string, unknown> | readonly string[],
+        spec: nested as Record<string, unknown> | readonly (string | Record<string, unknown>)[],
         parentAlias: newAlias,
         parentMetadata: relationMetadata.inverseEntityMetadata,
         mode,
@@ -328,7 +352,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     const res = this.clone<ApplyLeftJoinsAndSelect<Entity, Spec>>();
 
     return res.applyRelationSpec({
-      spec: spec as Record<string, unknown> | readonly string[],
+      spec: spec as Record<string, unknown> | readonly (string | Record<string, unknown>)[],
       parentAlias: res.alias,
       parentMetadata: res.repository.metadata,
       mode: 'leftJoinAndSelect',
@@ -339,7 +363,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     const res = this.clone<ApplyJoinsAndSelect<Entity, Spec>>();
 
     return res.applyRelationSpec({
-      spec: spec as Record<string, unknown> | readonly string[],
+      spec: spec as Record<string, unknown> | readonly (string | Record<string, unknown>)[],
       parentAlias: res.alias,
       parentMetadata: res.repository.metadata,
       mode: 'innerJoinAndSelect',
@@ -350,7 +374,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     const res = this.clone();
 
     return res.applyRelationSpec({
-      spec: spec as Record<string, unknown> | readonly string[],
+      spec: spec as Record<string, unknown> | readonly (string | Record<string, unknown>)[],
       parentAlias: res.alias,
       parentMetadata: res.repository.metadata,
       mode: 'innerJoin',
@@ -361,7 +385,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     const res = this.clone();
 
     return res.applyRelationSpec({
-      spec: spec as Record<string, unknown> | readonly string[],
+      spec: spec as Record<string, unknown> | readonly (string | Record<string, unknown>)[],
       parentAlias: res.alias,
       parentMetadata: res.repository.metadata,
       mode: 'leftJoin',

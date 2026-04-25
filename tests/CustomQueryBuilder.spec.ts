@@ -326,6 +326,21 @@ describe('CustomQueryBuilder', () => {
       expect(result?.user?.profile?.bio).toBe('hello');
     });
 
+    it('mixes string entries and nested-spec objects in the same array', async () => {
+      const alice = await createUser('alice', 30);
+      await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
+      await PostRepository.save({ title: 'one', user_id: alice.id });
+
+      const result = await UserRepository.qb('parent_users')
+        .leftJoinsAndSelect(['profile', { posts: ['user'] }])
+        .where({ id: alice.id })
+        .getOne();
+
+      expect(result?.profile?.bio).toBe('hello');
+      expect(result?.posts.map((post) => post.title)).toEqual(['one']);
+      expect(result?.posts[0].user?.id).toBe(alice.id);
+    });
+
     it('joins and selects multiple relations at once', async () => {
       const alice = await createUser('alice', 30);
       await ProfileRepository.save({ bio: 'hello', user_id: alice.id });

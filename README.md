@@ -46,6 +46,81 @@ await UserRepository.qb().whereNot({ age: null }).getMany();
 
 Object conditions auto-`AND` and emit `IS NULL` / `IS NOT NULL` for `null` values.
 
+### `IN` / `NOT IN` via array values
+
+Pass an array as the value to get `IN` (or `NOT IN` with `whereNot`):
+
+```ts
+await UserRepository.qb().where({ id: [1, 2, 3] }).getMany();
+// WHERE "users"."id" IN ($1, $2, $3)
+
+await UserRepository.qb().whereNot({ status: ['archived', 'deleted'] }).getMany();
+// WHERE "users"."status" NOT IN ($1, $2)
+```
+
+Empty arrays are handled the same way ActiveRecord does:
+
+- `where({ id: [] })` → `WHERE 1 = 0` (matches no rows)
+- `whereNot({ id: [] })` → `WHERE 1 = 1` (matches all rows)
+
+### Object form value rules
+
+The object form of `where` / `whereNot` distinguishes three column shapes:
+
+1. **Scalar columns** (`string`, `number`, `boolean` and their
+   nullable variants) — strict typing. The value must match the column's
+   TS type, optionally as an array for `IN`/`NOT IN`.
+
+   ```ts
+   await UserRepository.qb().where({ name: 'alice' }).getMany();
+   await UserRepository.qb().where({ id: [1, 2, 3] }).getMany();
+   ```
+
+2. **Non-scalar non-array columns** (transformer-wrapped types like
+   `Decimal` / `UUID` / branded IDs, JSONB-shaped objects, …) — pass any
+   scalar (string, number, boolean) and let the database coerce.
+   The wrapper instance itself is *not* accepted; pass its serialized
+   form. The value comes back hydrated through the column's `from`
+   transformer on read.
+
+   ```ts
+   // Decimal column: pass a string, Postgres coerces to numeric
+   await OrderRepository.qb().where({ total: '99.95' }).getMany();
+
+   // UUID column with a wrapper class: pass the canonical string
+   await UserRepository.qb().where({ id: '00000000-0000-…' }).getMany();
+   ```
+
+3. **Array-typed columns** (`text[]`, JSONB-of-array, …) — rejected at
+   the type level. Equality, `IN`, containment (`@>`), and `= ANY` are
+   all valid SQL operations against array columns and we can't guess
+   which you mean. Use raw SQL.
+
+   ```ts
+   await PostRepository.qb()
+     .where('posts.tags @> :tags', { tags: ['featured'] })
+     .getMany();
+   ```
+
+For anything more exotic (JSONB containment, key extraction, casting,
+custom operators) drop to raw SQL — you pick the operator instead of us
+guessing:
+
+```ts
+await EventRepository.qb()
+  .where('events.metadata @> :metadata', { metadata: { source: 'webhook' } })
+  .getMany();
+```
+
+We deliberately do *not* invoke the column's `to` transformer on values
+passed through the object form. A transformer like
+`to: state => state.toLowerCase()` would turn
+`where({ state: 'New York' })` into a query for `'new york'` — the right
+rows for the wrong-looking reason. The case-mismatch returning zero rows
+is a more noticeable failure than silent normalization returning
+unexpected matches. If you need the transformer applied, call it
+yourself or use raw SQL.
+
 ### Mixing raw SQL with object conditions
 
 Each call wraps its raw fragment in `(...)` so precedence is preserved when combined with later `where`s:

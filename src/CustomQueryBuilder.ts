@@ -40,6 +40,17 @@ type DottedRelation<Entity, Path extends readonly string[]> =
       : never
     : never;
 
+type Scalar = string | number | boolean;
+
+type WhereObjectConditions<Entity> = {
+  [K in keyof Entity]?:
+    NonNullable<Entity[K]> extends readonly unknown[]
+      ? never
+      : NonNullable<Entity[K]> extends Scalar
+        ? Entity[K] | NonNullable<Entity[K]>[]
+        : Scalar | Scalar[] | (null extends Entity[K] ? null : never);
+};
+
 type RelationKey<Entity> = {
   [K in keyof Entity]-?: NonNullable<Entity[K]> extends Date
     ? never
@@ -138,7 +149,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return res;
   }
 
-  private applyWhere(conditions: string | Partial<Entity>, parameters?: ObjectLiteral) {
+  private applyWhere(conditions: string | WhereObjectConditions<Entity>, parameters?: ObjectLiteral) {
     if (typeof conditions === 'string') {
       const { newCondition, newParameters } = this.rewriteParameters(conditions, parameters || {});
 
@@ -147,12 +158,21 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
       const conditionsObject = conditions as ObjectLiteral;
 
       Object.keys(conditionsObject).forEach((key) => {
-        if (conditionsObject[key] === null) {
-          this.qb.andWhere(`(${this.quoteColumnName(this.alias)}.${this.quoteColumnName(key)} IS NULL)`);
+        const value = conditionsObject[key];
+        const column = `${this.quoteColumnName(this.alias)}.${this.quoteColumnName(key)}`;
+
+        if (value === null) {
+          this.qb.andWhere(`(${column} IS NULL)`);
+        } else if (Array.isArray(value)) {
+          if (value.length === 0) {
+            this.qb.andWhere('(1 = 0)');
+          } else {
+            const param = this.incrementParameter();
+            this.qb.andWhere(`(${column} IN (:...${param}))`, { [param]: value });
+          }
         } else {
           const param = this.incrementParameter();
-
-          this.qb.andWhere(`(${this.quoteColumnName(this.alias)}.${this.quoteColumnName(key)} = :${param})`, { [param]: conditionsObject[key] });
+          this.qb.andWhere(`(${column} = :${param})`, { [param]: value });
         }
       });
     }
@@ -160,11 +180,11 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this;
   }
 
-  where(conditions: string | Partial<Entity>, parameters?: ObjectLiteral): QueryBuilder<Entity, Projected> {
+  where(conditions: string | WhereObjectConditions<Entity>, parameters?: ObjectLiteral): QueryBuilder<Entity, Projected> {
     return this.clone().applyWhere(conditions, parameters);
   }
 
-  private applyWhereNot(conditions: string | Partial<Entity>, parameters?: ObjectLiteral) {
+  private applyWhereNot(conditions: string | WhereObjectConditions<Entity>, parameters?: ObjectLiteral) {
     if (typeof conditions === 'string') {
       const { newCondition, newParameters } = this.rewriteParameters(conditions, parameters || {});
 
@@ -173,12 +193,21 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
       const conditionsObject = conditions as ObjectLiteral;
 
       Object.keys(conditionsObject).forEach((key) => {
-        if (conditionsObject[key] === null) {
-          this.qb.andWhere(`(${this.quoteColumnName(this.alias)}.${this.quoteColumnName(key)} IS NOT NULL)`);
+        const value = conditionsObject[key];
+        const column = `${this.quoteColumnName(this.alias)}.${this.quoteColumnName(key)}`;
+
+        if (value === null) {
+          this.qb.andWhere(`(${column} IS NOT NULL)`);
+        } else if (Array.isArray(value)) {
+          if (value.length === 0) {
+            this.qb.andWhere('(1 = 1)');
+          } else {
+            const param = this.incrementParameter();
+            this.qb.andWhere(`(${column} NOT IN (:...${param}))`, { [param]: value });
+          }
         } else {
           const param = this.incrementParameter();
-
-          this.qb.andWhere(`(${this.quoteColumnName(this.alias)}.${this.quoteColumnName(key)} != :${param})`, { [param]: conditionsObject[key] });
+          this.qb.andWhere(`(${column} != :${param})`, { [param]: value });
         }
       });
     }
@@ -186,7 +215,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this;
   }
 
-  whereNot(conditions: string | Partial<Entity>, parameters?: ObjectLiteral): QueryBuilder<Entity, Projected> {
+  whereNot(conditions: string | WhereObjectConditions<Entity>, parameters?: ObjectLiteral): QueryBuilder<Entity, Projected> {
     return this.clone().applyWhereNot(conditions, parameters);
   }
 

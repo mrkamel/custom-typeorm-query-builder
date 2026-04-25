@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { UserRepository } from './repositories/UserRepository';
 import { ProfileRepository } from './repositories/ProfileRepository';
 import { PostRepository } from './repositories/PostRepository';
+import { CodeRepository } from './repositories/CodeRepository';
+import { Code } from './entities/CodeEntity';
 
 async function createUser(name: string, age: number | null = null) {
   return await UserRepository.save({ name, age });
@@ -25,6 +27,29 @@ describe('CustomQueryBuilder', () => {
       const result = await UserRepository.qb().where({ age: null }).getMany();
 
       expect(result.map((user) => user.id)).toEqual([noAge.id]);
+    });
+
+    it('emits IN (...) for an array value', async () => {
+      const alice = await createUser('alice', 30);
+      const bob = await createUser('bob', 40);
+      await createUser('carol', 50);
+
+      const result = await UserRepository.qb()
+        .where({ name: ['alice', 'bob'] })
+        .getMany();
+
+      expect(result.map((user) => user.id).sort()).toEqual([alice.id, bob.id].sort());
+    });
+
+    it('emits a constant false for an empty array (matches no rows)', async () => {
+      await createUser('alice', 30);
+      await createUser('bob', 40);
+
+      const sql = UserRepository.qb().where({ name: [] }).getSql();
+      expect(sql).toMatch(/1 = 0/);
+
+      const result = await UserRepository.qb().where({ name: [] }).getMany();
+      expect(result).toEqual([]);
     });
 
     it('combines multiple object keys with AND', async () => {
@@ -128,6 +153,46 @@ describe('CustomQueryBuilder', () => {
       expect(baseResult.map((user) => user.id).sort()).toEqual([alice.id, bob.id].sort());
       expect(projectedRows.map((row) => row.users_name).sort()).toEqual(['alice', 'bob']);
     });
+
+    it('matches a transformer-wrapped (non-scalar non-array) column by scalar value', async () => {
+      await CodeRepository.save({ code: new Code('alpha') });
+      await CodeRepository.save({ code: new Code('beta') });
+
+      const result = await CodeRepository.qb().where({ code: 'alpha' }).getOne();
+
+      expect(result?.code).toBeInstanceOf(Code);
+      expect(result?.code.value).toBe('alpha');
+    });
+
+    it('matches a transformer-wrapped column with an IN array of scalar values', async () => {
+      await CodeRepository.save({ code: new Code('alpha') });
+      await CodeRepository.save({ code: new Code('beta') });
+      await CodeRepository.save({ code: new Code('gamma') });
+
+      const result = await CodeRepository.qb()
+        .where({ code: ['alpha', 'beta'] })
+        .getMany();
+
+      expect(result.map((row) => row.code.value).sort()).toEqual(['alpha', 'beta']);
+    });
+  });
+
+  describe('object form column restrictions', () => {
+    it('rejects array-typed columns at the type level', () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const _typeOnly = () => {
+        // @ts-expect-error posts is a *-to-many relation (array type) — ambiguous, force raw SQL
+        UserRepository.qb().where({ posts: [] });
+
+        // @ts-expect-error same for whereNot
+        UserRepository.qb().whereNot({ posts: [] });
+
+        // sanity: scalar columns and arrays of scalars stay allowed
+        UserRepository.qb().where({ name: 'alice' });
+        UserRepository.qb().where({ name: ['alice', 'bob'] });
+        UserRepository.qb().where({ age: null });
+      };
+    });
   });
 
   describe('whereNot', () => {
@@ -149,6 +214,29 @@ describe('CustomQueryBuilder', () => {
       expect(result.map((user) => user.id)).toEqual([withAge.id]);
     });
 
+    it('emits NOT IN (...) for an array value', async () => {
+      await createUser('alice', 30);
+      await createUser('bob', 40);
+      const carol = await createUser('carol', 50);
+
+      const result = await UserRepository.qb()
+        .whereNot({ name: ['alice', 'bob'] })
+        .getMany();
+
+      expect(result.map((user) => user.id)).toEqual([carol.id]);
+    });
+
+    it('emits a constant true for an empty exclusion (matches all rows)', async () => {
+      await createUser('alice', 30);
+      await createUser('bob', 40);
+
+      const sql = UserRepository.qb().whereNot({ name: [] }).getSql();
+      expect(sql).toMatch(/1 = 1/);
+
+      const result = await UserRepository.qb().whereNot({ name: [] }).getMany();
+      expect(result).toHaveLength(2);
+    });
+
     it('negates a raw SQL condition', async () => {
       const alice = await createUser('alice', 30);
       await createUser('bob', 40);
@@ -158,6 +246,27 @@ describe('CustomQueryBuilder', () => {
         .getMany();
 
       expect(result.map((user) => user.id)).toEqual([alice.id]);
+    });
+
+    it('excludes a transformer-wrapped (non-scalar non-array) column by scalar value', async () => {
+      await CodeRepository.save({ code: new Code('alpha') });
+      const beta = await CodeRepository.save({ code: new Code('beta') });
+
+      const result = await CodeRepository.qb().whereNot({ code: 'alpha' }).getMany();
+
+      expect(result.map((row) => row.id)).toEqual([beta.id]);
+    });
+
+    it('excludes a transformer-wrapped column with a NOT IN array of scalars', async () => {
+      await CodeRepository.save({ code: new Code('alpha') });
+      await CodeRepository.save({ code: new Code('beta') });
+      const gamma = await CodeRepository.save({ code: new Code('gamma') });
+
+      const result = await CodeRepository.qb()
+        .whereNot({ code: ['alpha', 'beta'] })
+        .getMany();
+
+      expect(result.map((row) => row.id)).toEqual([gamma.id]);
     });
   });
 

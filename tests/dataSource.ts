@@ -4,6 +4,7 @@ import { UserEntity } from './entities/UserEntity';
 import { ProfileEntity } from './entities/ProfileEntity';
 import { PostEntity } from './entities/PostEntity';
 import { CodeEntity } from './entities/CodeEntity';
+import { MembershipEntity } from './entities/MembershipEntity';
 
 export const dataSource = new DataSource({
   type: 'postgres',
@@ -12,7 +13,7 @@ export const dataSource = new DataSource({
   username: process.env.PGUSER ?? 'test',
   password: process.env.PGPASSWORD ?? 'test',
   database: process.env.PGDATABASE ?? 'test',
-  entities: [UserEntity, ProfileEntity, PostEntity, CodeEntity],
+  entities: [UserEntity, ProfileEntity, PostEntity, CodeEntity, MembershipEntity],
   synchronize: true,
   dropSchema: true,
 });

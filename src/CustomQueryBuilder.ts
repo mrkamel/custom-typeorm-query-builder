@@ -63,12 +63,12 @@ type JoinSpec<Entity> =
   | readonly RelationKey<Entity>[]
   | { [K in RelationKey<Entity>]?: JoinSpec<UnwrapRelation<Entity[K]>> };
 
-type ApplyEagerLoadsNested<Value, NestedSpec> =
+type ApplyLeftJoinsAndSelectNested<Value, NestedSpec> =
   NonNullable<Value> extends (infer U)[]
-    ? ApplyEagerLoads<NonNullable<U>, NestedSpec>[]
-    : ApplyEagerLoads<NonNullable<Value>, NestedSpec> | null;
+    ? ApplyLeftJoinsAndSelect<NonNullable<U>, NestedSpec>[]
+    : ApplyLeftJoinsAndSelect<NonNullable<Value>, NestedSpec> | null;
 
-type ApplyEagerLoads<Entity, Spec> =
+type ApplyLeftJoinsAndSelect<Entity, Spec> =
   Spec extends readonly (infer Item)[]
     ? Entity & {
       [P in Extract<Item, keyof Entity>]-?:
@@ -76,16 +76,16 @@ type ApplyEagerLoads<Entity, Spec> =
     }
     : Spec extends Record<string, unknown>
       ? Entity & {
-        [K in Extract<keyof Spec, keyof Entity>]-?: ApplyEagerLoadsNested<Entity[K], Spec[K]>;
+        [K in Extract<keyof Spec, keyof Entity>]-?: ApplyLeftJoinsAndSelectNested<Entity[K], Spec[K]>;
       }
       : Entity;
 
-type ApplyEagerJoinsNested<Value, NestedSpec> =
+type ApplyJoinsAndSelectNested<Value, NestedSpec> =
   NonNullable<Value> extends (infer U)[]
-    ? ApplyEagerJoins<NonNullable<U>, NestedSpec>[]
-    : ApplyEagerJoins<NonNullable<Value>, NestedSpec>;
+    ? ApplyJoinsAndSelect<NonNullable<U>, NestedSpec>[]
+    : ApplyJoinsAndSelect<NonNullable<Value>, NestedSpec>;
 
-type ApplyEagerJoins<Entity, Spec> =
+type ApplyJoinsAndSelect<Entity, Spec> =
   Spec extends readonly (infer Item)[]
     ? Entity & {
       [P in Extract<Item, keyof Entity>]-?:
@@ -93,12 +93,12 @@ type ApplyEagerJoins<Entity, Spec> =
     }
     : Spec extends Record<string, unknown>
       ? Entity & {
-        [K in Extract<keyof Spec, keyof Entity>]-?: ApplyEagerJoinsNested<Entity[K], Spec[K]>;
+        [K in Extract<keyof Spec, keyof Entity>]-?: ApplyJoinsAndSelectNested<Entity[K], Spec[K]>;
       }
       : Entity;
 
 type QueryBuilder<Entity extends ObjectLiteral, Projected extends boolean = false> =
-  Omit<CustomQueryBuilder<Entity, Projected>, Projected extends true ? 'getOne' | 'getMany' | 'getOneOrFail' : never>;
+  Omit<CustomQueryBuilder<Entity, Projected>, Projected extends true ? 'getOne' | 'getMany' | 'getOneOrFail' | 'forEach' : never>;
 
 export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends boolean = false> {
   private qb = this.repository.createQueryBuilder(this.alias);
@@ -324,26 +324,26 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     }
   }
 
-  eagerLoads<const Spec extends JoinSpec<Entity>>(spec: Spec): QueryBuilder<ApplyEagerLoads<Entity, Spec>, Projected> {
-    const res = this.clone<ApplyEagerLoads<Entity, Spec>>();
+  leftJoinsAndSelect<const Spec extends JoinSpec<Entity>>(spec: Spec): QueryBuilder<ApplyLeftJoinsAndSelect<Entity, Spec>, Projected> {
+    const res = this.clone<ApplyLeftJoinsAndSelect<Entity, Spec>>();
 
     return res.applyRelationSpec({
       spec: spec as Record<string, unknown> | readonly string[],
       parentAlias: res.alias,
       parentMetadata: res.repository.metadata,
       mode: 'leftJoinAndSelect',
-    }) as unknown as QueryBuilder<ApplyEagerLoads<Entity, Spec>, Projected>;
+    }) as unknown as QueryBuilder<ApplyLeftJoinsAndSelect<Entity, Spec>, Projected>;
   }
 
-  eagerJoins<const Spec extends JoinSpec<Entity>>(spec: Spec): QueryBuilder<ApplyEagerJoins<Entity, Spec>, Projected> {
-    const res = this.clone<ApplyEagerJoins<Entity, Spec>>();
+  joinsAndSelect<const Spec extends JoinSpec<Entity>>(spec: Spec): QueryBuilder<ApplyJoinsAndSelect<Entity, Spec>, Projected> {
+    const res = this.clone<ApplyJoinsAndSelect<Entity, Spec>>();
 
     return res.applyRelationSpec({
       spec: spec as Record<string, unknown> | readonly string[],
       parentAlias: res.alias,
       parentMetadata: res.repository.metadata,
       mode: 'innerJoinAndSelect',
-    }) as unknown as QueryBuilder<ApplyEagerJoins<Entity, Spec>, Projected>;
+    }) as unknown as QueryBuilder<ApplyJoinsAndSelect<Entity, Spec>, Projected>;
   }
 
   joins<const Spec extends JoinSpec<Entity>>(spec: Spec): QueryBuilder<Entity, Projected> {
@@ -508,6 +508,67 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
 
   getManyAndCount() {
     return this.qb.getManyAndCount();
+  }
+
+  private async *iterate<Row>(
+    batchSize: number,
+    mode: 'entity' | 'raw',
+  ): AsyncGenerator<Row, void, undefined> {
+    const primaryColumns = this.repository.metadata.primaryColumns;
+
+    if (primaryColumns.length === 0) {
+      throw new CustomQueryBuilderError(`Cannot iterate ${this.repository.metadata.name}: no primary key`);
+    }
+
+    const columnList = primaryColumns.map((col) => `${this.alias}.${col.propertyName}`).join(', ');
+    let cursor: unknown[] | undefined;
+
+    while (true) {
+      const batch = this.clone();
+
+      // Always ensure PK columns are in the SELECT list so we can advance the cursor even when the user's projection omits them.
+      primaryColumns.forEach((col) => batch.qb.addSelect(`${this.alias}.${col.propertyName}`));
+
+      // First call replaces any prior orderBy; subsequent calls append.
+      batch.qb.orderBy(`${this.alias}.${primaryColumns[0].propertyName}`, 'ASC');
+      primaryColumns.slice(1).forEach((col) => batch.qb.addOrderBy(`${this.alias}.${col.propertyName}`, 'ASC'));
+
+      if (cursor) {
+        const placeholders = primaryColumns.map((col) => `:_pk_${col.propertyName}`).join(', ');
+        const parameters: ObjectLiteral = {};
+
+        primaryColumns.forEach((col, index) => { parameters[`_pk_${col.propertyName}`] = cursor![index]; });
+
+        const { newCondition, newParameters } = batch.rewriteParameters(`(${columnList}) > (${placeholders})`, parameters);
+
+        batch.qb.andWhere(`(${newCondition})`, newParameters);
+      }
+
+      // take() routes through TypeORM's entity-level distinctAlias pagination — only valid for entity mode.
+      if (mode === 'entity') batch.qb.take(batchSize);
+      else batch.qb.limit(batchSize);
+
+      const rows = mode === 'entity' ? await batch.qb.getMany() : await batch.qb.getRawMany();
+
+      for (const row of rows) yield row as Row;
+
+      if (rows.length < batchSize) return;
+
+      const last = rows[rows.length - 1] as ObjectLiteral;
+
+      cursor = mode === 'entity'
+        ? primaryColumns.map((col) => last[col.propertyName])
+        : primaryColumns.map((col) => last[`${this.alias}_${col.databaseName}`]);
+    }
+  }
+
+  async *forEach(options: { batchSize?: number } = {}): AsyncGenerator<Entity, void, undefined> {
+    if (this.config.selects.length > 0) throw new CustomQueryBuilderError('forEach cannot be used after select');
+    yield* this.iterate<Entity>(options.batchSize ?? 1000, 'entity');
+  }
+
+  async *forEachRaw(options: { batchSize?: number } = {}): AsyncGenerator<ObjectLiteral, void, undefined> {
+    yield* this.iterate<ObjectLiteral>(options.batchSize ?? 1000, 'raw');
   }
 
   private applySetLock(lockMode: 'optimistic' | 'pessimistic_read' | 'pessimistic_write' | 'dirty_read', lockVersion?: number | Date) {

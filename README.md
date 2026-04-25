@@ -172,9 +172,9 @@ await ApprovalRequestRepository.qb()
   .getMany();
 ```
 
-### Eager loading
+### Simplified join loading
 
-`eagerLoads()` hydrates relations via `LEFT JOIN AND SELECT`. The spec is
+`leftJoinsAndSelect()` hydrates relations via `LEFT JOIN AND SELECT`. The spec is
 either an array of relation names (leaves) or an object whose values are
 themselves specs (for nesting). Keys are restricted to actual relation
 properties of the entity; scalar columns and unknown keys are rejected at
@@ -187,25 +187,25 @@ examples below the `profile` relation joins as `profiles`, `posts` as
 
 ```ts
 // Single or multiple leaves
-await UserRepository.qb().eagerLoads(['profile']).getMany();
-await UserRepository.qb().eagerLoads(['profile', 'posts']).getMany();
+await UserRepository.qb().leftJoinsAndSelect(['profile']).getMany();
+await UserRepository.qb().leftJoinsAndSelect(['profile', 'posts']).getMany();
 
 // Nested — use an object at the level you want to nest, array (or object)
 // for the leaves
-await PostRepository.qb().eagerLoads({ user: ['profile'] }).getMany();
-await UserRepository.qb().eagerLoads({ posts: { user: ['profile'] } }).getMany();
+await PostRepository.qb().leftJoinsAndSelect({ user: ['profile'] }).getMany();
+await UserRepository.qb().leftJoinsAndSelect({ posts: { user: ['profile'] } }).getMany();
 
 // The join alias matches the target table name, so you can reference it
 // in where clauses:
 await UserRepository.qb()
-  .eagerLoads(['profile'])
+  .leftJoinsAndSelect(['profile'])
   .where('profiles.bio = :bio', { bio: 'hello' })
   .getMany();
 ```
 
 ### Joining without hydrating (`joins` / `leftJoins`)
 
-`joins()` and `leftJoins()` mirror `eagerLoads()` — same array/object spec, same table-name
+`joins()` and `leftJoins()` mirror `leftJoinsAndSelect()` — same array/object spec, same table-name
 aliases — but do **not** select the joined columns. Use them when you want to filter or
 order by a related table without paying to hydrate it.
 
@@ -228,16 +228,16 @@ await PostRepository.qb().joins({ user: ['profile'] }).getMany();
 
 The return type is unchanged — relations are not hydrated, so they remain optional on the entity.
 
-### `eagerJoins` — filter and hydrate
+### `joinsAndSelect` — filter and hydrate
 
-`eagerJoins()` is the `INNER JOIN + SELECT` counterpart of `eagerLoads()`:
+`joinsAndSelect()` is the `INNER JOIN + SELECT` counterpart of `leftJoinsAndSelect()`:
 it hydrates the relation *and* drops rows without a match. Same spec and
-alias rules. Unlike `eagerLoads` (which keeps relations nullable to reflect
+alias rules. Unlike `leftJoinsAndSelect` (which keeps relations nullable to reflect
 the LEFT JOIN), the return type marks loaded relations as non-null.
 
 ```ts
 // Only users that have a profile; `profile` is typed as present
-const users = await UserRepository.qb().eagerJoins(['profile']).getMany();
+const users = await UserRepository.qb().joinsAndSelect(['profile']).getMany();
 users[0].profile.bio; // no optional chaining needed
 ```
 
@@ -291,7 +291,7 @@ await UserRepository.qb()
 
 `skip` / `take` are the ORM-level pagination knobs — they become `OFFSET` /
 `LIMIT` for simple queries, and switch to TypeORM's distinct-alias two-query
-strategy when combined with a `*-to-many` eager load. `limit(n)` is a raw
+strategy when combined with a `*-to-many` join load. `limit(n)` is a raw
 `LIMIT` only — no offset, no pagination rewrites. Use it when you want a
 hard cap on rows without TypeORM touching the query shape.
 

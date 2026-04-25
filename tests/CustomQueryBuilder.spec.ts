@@ -4,6 +4,8 @@ import { ProfileRepository } from './repositories/ProfileRepository';
 import { PostRepository } from './repositories/PostRepository';
 import { CodeRepository } from './repositories/CodeRepository';
 import { Code } from './entities/CodeEntity';
+import { MembershipRepository } from './repositories/MembershipRepository';
+import { randomUUID } from 'crypto';
 
 async function createUser(name: string, age: number | null = null) {
   return await UserRepository.save({ name, age });
@@ -179,7 +181,7 @@ describe('CustomQueryBuilder', () => {
 
   describe('object form column restrictions', () => {
     it('rejects array-typed columns at the type level', () => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
       const _typeOnly = () => {
         // @ts-expect-error posts is a *-to-many relation (array type) — ambiguous, force raw SQL
         UserRepository.qb().where({ posts: [] });
@@ -284,13 +286,13 @@ describe('CustomQueryBuilder', () => {
     });
   });
 
-  describe('eagerLoads', () => {
-    it('eager loads a single to-one relation', async () => {
+  describe('leftJoinsAndSelect', () => {
+    it('joins and selects a single to-one relation', async () => {
       const alice = await createUser('alice', 30);
       await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
 
       const result = await UserRepository.qb()
-        .eagerLoads(['profile'])
+        .leftJoinsAndSelect(['profile'])
         .where({ id: alice.id })
         .getOne();
 
@@ -303,7 +305,7 @@ describe('CustomQueryBuilder', () => {
       await PostRepository.save({ title: 'one', user_id: alice.id });
 
       const result = await UserRepository.qb()
-        .eagerLoads(['profile', 'posts'])
+        .leftJoinsAndSelect(['profile', 'posts'])
         .where({ id: alice.id })
         .getOne();
 
@@ -317,21 +319,21 @@ describe('CustomQueryBuilder', () => {
       await PostRepository.save({ title: 'one', user_id: alice.id });
 
       const result = await PostRepository.qb()
-        .eagerLoads({ user: ['profile'] })
+        .leftJoinsAndSelect({ user: ['profile'] })
         .getOne();
 
       expect(result?.user?.id).toBe(alice.id);
       expect(result?.user?.profile?.bio).toBe('hello');
     });
 
-    it('eager loads multiple relations at once', async () => {
+    it('joins and selects multiple relations at once', async () => {
       const alice = await createUser('alice', 30);
       await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
       await PostRepository.save({ title: 'one', user_id: alice.id });
       await PostRepository.save({ title: 'two', user_id: alice.id });
 
       const result = await UserRepository.qb()
-        .eagerLoads(['profile', 'posts'])
+        .leftJoinsAndSelect(['profile', 'posts'])
         .where({ id: alice.id })
         .getOne();
 
@@ -339,13 +341,13 @@ describe('CustomQueryBuilder', () => {
       expect(result?.posts.map((post) => post.title).sort()).toEqual(['one', 'two']);
     });
 
-    it('eager loads nested relations using target table names as aliases', async () => {
+    it('joins and selects nested relations using target table names as aliases', async () => {
       const alice = await createUser('alice', 30);
       await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
       await PostRepository.save({ title: 'one', user_id: alice.id });
 
       const result = await PostRepository.qb()
-        .eagerLoads({ user: ['profile'] })
+        .leftJoinsAndSelect({ user: ['profile'] })
         .getOne();
 
       expect(result?.user?.id).toBe(alice.id);
@@ -358,7 +360,7 @@ describe('CustomQueryBuilder', () => {
       await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
 
       const result = await UserRepository.qb()
-        .eagerLoads(['profile'])
+        .leftJoinsAndSelect(['profile'])
         .orderBy({ name: 'ASC' })
         .getMany();
 
@@ -373,7 +375,7 @@ describe('CustomQueryBuilder', () => {
       await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
 
       const result = await UserRepository.qb()
-        .eagerLoads(['profile'])
+        .leftJoinsAndSelect(['profile'])
         .where('profiles.bio = :bio', { bio: 'hello' })
         .getMany();
 
@@ -381,15 +383,15 @@ describe('CustomQueryBuilder', () => {
     });
 
     it('rejects unknown relations at the type level', () => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
       const _typeOnly = () => {
         // @ts-expect-error nonexistent is not a relation on UserEntity
-        UserRepository.qb().eagerLoads(['nonexistent']);
+        UserRepository.qb().leftJoinsAndSelect(['nonexistent']);
 
         // @ts-expect-error name is a scalar column, not a relation
-        UserRepository.qb().eagerLoads(['name']);
+        UserRepository.qb().leftJoinsAndSelect(['name']);
 
-        UserRepository.qb().eagerLoads({
+        UserRepository.qb().leftJoinsAndSelect({
           // @ts-expect-error title is a scalar, not a relation on PostEntity
           posts: ['title'],
         });
@@ -397,14 +399,14 @@ describe('CustomQueryBuilder', () => {
     });
   });
 
-  describe('eagerJoins', () => {
+  describe('joinsAndSelect', () => {
     it('inner-joins a single relation and hydrates it', async () => {
       const alice = await createUser('alice', 30);
       await createUser('bob', 40);
       await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
 
       const result = await UserRepository.qb()
-        .eagerJoins(['profile'])
+        .joinsAndSelect(['profile'])
         .getMany();
 
       expect(result.map((user) => user.id)).toEqual([alice.id]);
@@ -417,7 +419,7 @@ describe('CustomQueryBuilder', () => {
       await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
 
       const result = await UserRepository.qb()
-        .eagerJoins(['profile'])
+        .joinsAndSelect(['profile'])
         .orderBy({ name: 'ASC' })
         .getMany();
 
@@ -434,7 +436,7 @@ describe('CustomQueryBuilder', () => {
       await PostRepository.save({ title: 'two', user_id: bob.id });
 
       const result = await PostRepository.qb()
-        .eagerJoins({ user: ['profile'] })
+        .joinsAndSelect({ user: ['profile'] })
         .getMany();
 
       expect(result.map((post) => post.title)).toEqual(['one']);
@@ -448,7 +450,7 @@ describe('CustomQueryBuilder', () => {
       await ProfileRepository.save({ bio: 'other', user_id: (await createUser('carol', 50)).id });
 
       const result = await UserRepository.qb()
-        .eagerJoins(['profile'])
+        .joinsAndSelect(['profile'])
         .where('profiles.bio = :bio', { bio: 'hello' })
         .getMany();
 
@@ -456,15 +458,15 @@ describe('CustomQueryBuilder', () => {
     });
 
     it('rejects unknown relations at the type level', () => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
       const _typeOnly = () => {
         // @ts-expect-error nonexistent is not a relation on UserEntity
-        UserRepository.qb().eagerJoins(['nonexistent']);
+        UserRepository.qb().joinsAndSelect(['nonexistent']);
 
         // @ts-expect-error name is a scalar column, not a relation
-        UserRepository.qb().eagerJoins(['name']);
+        UserRepository.qb().joinsAndSelect(['name']);
 
-        UserRepository.qb().eagerJoins({
+        UserRepository.qb().joinsAndSelect({
           // @ts-expect-error title is a scalar, not a relation on PostEntity
           posts: ['title'],
         });
@@ -516,7 +518,7 @@ describe('CustomQueryBuilder', () => {
     });
 
     it('rejects unknown relations at the type level', () => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
       const _typeOnly = () => {
         // @ts-expect-error nonexistent is not a relation on UserEntity
         UserRepository.qb().joins(['nonexistent']);
@@ -570,7 +572,7 @@ describe('CustomQueryBuilder', () => {
     });
 
     it('rejects unknown relations at the type level', () => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
       const _typeOnly = () => {
         // @ts-expect-error nonexistent is not a relation on UserEntity
         UserRepository.qb().leftJoins(['nonexistent']);
@@ -697,7 +699,7 @@ describe('CustomQueryBuilder', () => {
       expect(result.map((user) => user.name)).toEqual(['alice', 'bob']);
     });
 
-    it('survives the distinctAlias pagination path (take + *-to-many eager load)', async () => {
+    it('survives the distinctAlias pagination path (take + *-to-many join load)', async () => {
       const alice = await createUser('alice', 30);
       const bob = await createUser('bob', 40);
       await PostRepository.save({ title: 'a1', user_id: alice.id });
@@ -705,7 +707,7 @@ describe('CustomQueryBuilder', () => {
       await PostRepository.save({ title: 'b1', user_id: bob.id });
 
       const result = await UserRepository.qb()
-        .eagerLoads(['posts'])
+        .leftJoinsAndSelect(['posts'])
         .orderBy({ name: 'ASC' })
         .take(1)
         .getMany();
@@ -856,6 +858,143 @@ describe('CustomQueryBuilder', () => {
 
       expect(rows.map((user) => user.name)).toEqual(['alice', 'bob']);
       expect(count).toBe(3);
+    });
+  });
+
+  describe('forEach', () => {
+    it('yields every row across multiple batches', async () => {
+      const users = [];
+
+      for (let index = 0; index < 7; index += 1) users.push(await createUser(`user${index}`, index));
+
+      const yielded: string[] = [];
+
+      for await (const row of UserRepository.qb().forEach({ batchSize: 3 })) {
+        yielded.push(row.id);
+      }
+
+      expect(yielded.sort()).toEqual(users.map((user) => user.id).sort());
+    });
+
+    it('respects an existing where filter', async () => {
+      const alice = await createUser('alice', 30);
+      await createUser('bob', 40);
+      await createUser('carol', 50);
+
+      const yielded: string[] = [];
+      for await (const row of UserRepository.qb().where({ name: 'alice' }).forEach({ batchSize: 10 })) {
+        yielded.push(row.id);
+      }
+
+      expect(yielded).toEqual([alice.id]);
+    });
+
+    it('orders by primary key only, replacing any prior orderBy', async () => {
+      const created = [];
+
+      for (let index = 0; index < 5; index += 1) created.push(await createUser(`u${index}`, 10 - index));
+
+      const yielded: string[] = [];
+
+      for await (const row of UserRepository.qb().orderBy({ age: 'ASC' }).forEach({ batchSize: 2 })) {
+        yielded.push(row.id);
+      }
+
+      expect(yielded).toEqual([...created].map((user) => user.id).sort());
+    });
+
+    it('iterates correctly with a composite primary key', async () => {
+      const tenantA = randomUUID();
+      const tenantB = randomUUID();
+
+      const rows = [
+        { tenant_id: tenantA, user_id: randomUUID(), role: 'admin' },
+        { tenant_id: tenantA, user_id: randomUUID(), role: 'member' },
+        { tenant_id: tenantA, user_id: randomUUID(), role: 'viewer' },
+        { tenant_id: tenantB, user_id: randomUUID(), role: 'admin' },
+        { tenant_id: tenantB, user_id: randomUUID(), role: 'member' },
+      ];
+
+      for (const row of rows) await MembershipRepository.save(row);
+
+      const yielded: { tenant_id: string, user_id: string }[] = [];
+
+      for await (const row of MembershipRepository.qb().forEach({ batchSize: 2 })) {
+        yielded.push({ tenant_id: row.tenant_id, user_id: row.user_id });
+      }
+
+      const expected = [...rows].sort((a, b) => {
+        if (a.tenant_id !== b.tenant_id) return a.tenant_id < b.tenant_id ? -1 : 1;
+
+        return a.user_id < b.user_id ? -1 : 1;
+      });
+
+      expect(yielded).toEqual(expected.map((row) => ({ tenant_id: row.tenant_id, user_id: row.user_id })));
+    });
+
+    it('yields nothing for an empty result set', async () => {
+      const yielded: string[] = [];
+
+      for await (const row of UserRepository.qb().forEach()) yielded.push(row.id);
+
+      expect(yielded).toEqual([]);
+    });
+
+    it('throws after select (projection)', async () => {
+      const projected = UserRepository.qb().select(['users.name']);
+
+      // @ts-expect-error forEach is removed at the type level after select
+      void projected.forEach;
+
+      const escapeHatch = projected as unknown as { forEach: () => AsyncGenerator<unknown> };
+
+      await expect((async () => {
+        for await (const _row of escapeHatch.forEach()) { /* unreachable */ }
+      })()).rejects.toThrow(/forEach cannot be used after select/);
+    });
+  });
+
+  describe('forEachRaw', () => {
+    it('yields raw rows across multiple batches', async () => {
+      const users = [];
+      for (let index = 0; index < 5; index += 1) users.push(await createUser(`user${index}`, index));
+
+      const yielded: string[] = [];
+      for await (const row of UserRepository.qb().forEachRaw({ batchSize: 2 })) {
+        yielded.push(row.users_id as string);
+      }
+
+      expect(yielded.sort()).toEqual(users.map((user) => user.id).sort());
+    });
+
+    it('works after select() and auto-includes the PK for cursor advancement', async () => {
+      const users = [];
+      for (let index = 0; index < 5; index += 1) users.push(await createUser(`user${index}`, 20 + index));
+
+      const yielded: { name: string, age: number }[] = [];
+      for await (const row of UserRepository.qb().select(['users.name', 'users.age']).forEachRaw({ batchSize: 2 })) {
+        yielded.push({ name: row.users_name as string, age: row.users_age as number });
+      }
+
+      expect(yielded.map((row) => row.name).sort()).toEqual(users.map((user) => user.name).sort());
+      expect(yielded.every((row) => typeof row.age === 'number')).toBe(true);
+    });
+
+    it('iterates correctly with a composite primary key', async () => {
+      const tenant = randomUUID();
+      const rows = [
+        { tenant_id: tenant, user_id: randomUUID(), role: 'admin' },
+        { tenant_id: tenant, user_id: randomUUID(), role: 'member' },
+        { tenant_id: tenant, user_id: randomUUID(), role: 'viewer' },
+      ];
+      for (const row of rows) await MembershipRepository.save(row);
+
+      const yielded: string[] = [];
+      for await (const row of MembershipRepository.qb().forEachRaw({ batchSize: 2 })) {
+        yielded.push(row.memberships_user_id as string);
+      }
+
+      expect(yielded.sort()).toEqual(rows.map((row) => row.user_id).sort());
     });
   });
 

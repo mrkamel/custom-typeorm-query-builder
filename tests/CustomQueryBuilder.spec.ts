@@ -391,7 +391,7 @@ describe('CustomQueryBuilder', () => {
 
       const result = await UserRepository.qb()
         .leftJoinsAndSelect(['profile'])
-        .where('profiles.bio = :bio', { bio: 'hello' })
+        .where('profile.bio = :bio', { bio: 'hello' })
         .getMany();
 
       expect(result.map((user) => user.id)).toEqual([alice.id]);
@@ -466,7 +466,7 @@ describe('CustomQueryBuilder', () => {
 
       const result = await UserRepository.qb()
         .joinsAndSelect(['profile'])
-        .where('profiles.bio = :bio', { bio: 'hello' })
+        .where('profile.bio = :bio', { bio: 'hello' })
         .getMany();
 
       expect(result.map((user) => user.id)).toEqual([alice.id]);
@@ -511,7 +511,7 @@ describe('CustomQueryBuilder', () => {
 
       const result = await UserRepository.qb()
         .joins(['profile'])
-        .where('profiles.bio = :bio', { bio: 'hello' })
+        .where('profile.bio = :bio', { bio: 'hello' })
         .getMany();
 
       expect(result.map((user) => user.id)).toEqual([alice.id]);
@@ -567,7 +567,7 @@ describe('CustomQueryBuilder', () => {
 
       const result = await UserRepository.qb()
         .leftJoins(['profile'])
-        .where('profiles.bio IS NOT NULL')
+        .where('profile.bio IS NOT NULL')
         .getMany();
 
       expect(result.map((user) => user.id)).toEqual([alice.id]);
@@ -580,7 +580,7 @@ describe('CustomQueryBuilder', () => {
 
       const result = await PostRepository.qb()
         .leftJoins({ user: ['profile'] })
-        .where('profiles.bio = :bio', { bio: 'hello' })
+        .where('profile.bio = :bio', { bio: 'hello' })
         .getMany();
 
       expect(result.map((post) => post.title)).toEqual(['one']);

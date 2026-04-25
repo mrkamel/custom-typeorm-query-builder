@@ -181,9 +181,13 @@ properties of the entity; scalar columns and unknown keys are rejected at
 the type level. The return type is narrowed so loaded relations become
 non-nullable.
 
-Aliases are derived from the target entity's table name — so in the
-examples below the `profile` relation joins as `profiles`, `posts` as
-`posts`, and a nested `user` as `users`.
+Aliases are the relation property name — same as what you wrote. So
+`['profile']` joins as `profile`, nested `{ posts: ['user'] }` joins as
+`posts` and `user`. If two paths in the same query collide on the relation
+name (e.g. two relations on the same entity both pointing at `User`, or a
+nested name shadowing a top-level one), drop to the single-relation
+`leftJoinAndSelect` form and pick an explicit alias for the conflicting
+join.
 
 ```ts
 // Single or multiple leaves
@@ -195,19 +199,18 @@ await UserRepository.qb().leftJoinsAndSelect(['profile', 'posts']).getMany();
 await PostRepository.qb().leftJoinsAndSelect({ user: ['profile'] }).getMany();
 await UserRepository.qb().leftJoinsAndSelect({ posts: { user: ['profile'] } }).getMany();
 
-// The join alias matches the target table name, so you can reference it
-// in where clauses:
+// The alias is the relation name, so you reference it directly in where:
 await UserRepository.qb()
   .leftJoinsAndSelect(['profile'])
-  .where('profiles.bio = :bio', { bio: 'hello' })
+  .where('profile.bio = :bio', { bio: 'hello' })
   .getMany();
 ```
 
 ### Joining without hydrating (`joins` / `leftJoins`)
 
-`joins()` and `leftJoins()` mirror `leftJoinsAndSelect()` — same array/object spec, same table-name
-aliases — but do **not** select the joined columns. Use them when you want to filter or
-order by a related table without paying to hydrate it.
+`joins()` and `leftJoins()` mirror `leftJoinsAndSelect()` — same array/object spec, same
+relation-name aliases — but do **not** select the joined columns. Use them when you
+want to filter or order by a related table without paying to hydrate it.
 
 - `joins(spec)` → `INNER JOIN` (drops rows without a match)
 - `leftJoins(spec)` → `LEFT JOIN` (keeps rows without a match)
@@ -216,10 +219,10 @@ order by a related table without paying to hydrate it.
 // Only return users that have a profile
 await UserRepository.qb().joins(['profile']).getMany();
 
-// Keep everyone, but expose the profiles alias for filtering/ordering
+// Keep everyone, but expose the profile alias for filtering/ordering
 await UserRepository.qb()
   .leftJoins(['profile'])
-  .where('profiles.bio IS NOT NULL')
+  .where('profile.bio IS NOT NULL')
   .getMany();
 
 // Nested

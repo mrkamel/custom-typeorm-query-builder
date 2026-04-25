@@ -70,45 +70,45 @@ type JoinSpec<Entity> =
   | readonly JoinSpecItem<Entity>[]
   | { [K in RelationKey<Entity>]?: JoinSpec<UnwrapRelation<Entity[K]>> };
 
-type ApplyLeftJoinsAndSelectNested<Value, NestedSpec> =
+type ApplyLeftJoinsAndSelectssNested<Value, NestedSpec> =
   NonNullable<Value> extends (infer U)[]
-    ? ApplyLeftJoinsAndSelect<NonNullable<U>, NestedSpec>[]
-    : ApplyLeftJoinsAndSelect<NonNullable<Value>, NestedSpec> | null;
+    ? ApplyLeftJoinsAndSelects<NonNullable<U>, NestedSpec>[]
+    : ApplyLeftJoinsAndSelects<NonNullable<Value>, NestedSpec> | null;
 
-type ApplyLeftJoinsAndSelectArrayItem<Entity, Item> =
+type ApplyLeftJoinsAndSelectssArrayItem<Entity, Item> =
   Item extends keyof Entity
     ? { [P in Item]-?: NonNullable<Entity[P]> extends (infer U)[] ? NonNullable<U>[] : NonNullable<Entity[P]> | null }
     : Item extends Record<string, unknown>
-      ? { [K in Extract<keyof Item, keyof Entity>]-?: ApplyLeftJoinsAndSelectNested<Entity[K], Item[K]> }
+      ? { [K in Extract<keyof Item, keyof Entity>]-?: ApplyLeftJoinsAndSelectssNested<Entity[K], Item[K]> }
       : never;
 
-type ApplyLeftJoinsAndSelect<Entity, Spec> =
+type ApplyLeftJoinsAndSelects<Entity, Spec> =
   Spec extends readonly (infer Item)[]
-    ? Entity & UnionToIntersection<ApplyLeftJoinsAndSelectArrayItem<Entity, Item>>
+    ? Entity & UnionToIntersection<ApplyLeftJoinsAndSelectssArrayItem<Entity, Item>>
     : Spec extends Record<string, unknown>
       ? Entity & {
-        [K in Extract<keyof Spec, keyof Entity>]-?: ApplyLeftJoinsAndSelectNested<Entity[K], Spec[K]>;
+        [K in Extract<keyof Spec, keyof Entity>]-?: ApplyLeftJoinsAndSelectssNested<Entity[K], Spec[K]>;
       }
       : Entity;
 
-type ApplyJoinsAndSelectNested<Value, NestedSpec> =
+type ApplyJoinsAndSelectssNested<Value, NestedSpec> =
   NonNullable<Value> extends (infer U)[]
-    ? ApplyJoinsAndSelect<NonNullable<U>, NestedSpec>[]
-    : ApplyJoinsAndSelect<NonNullable<Value>, NestedSpec>;
+    ? ApplyJoinsAndSelects<NonNullable<U>, NestedSpec>[]
+    : ApplyJoinsAndSelects<NonNullable<Value>, NestedSpec>;
 
-type ApplyJoinsAndSelectArrayItem<Entity, Item> =
+type ApplyJoinsAndSelectssArrayItem<Entity, Item> =
   Item extends keyof Entity
     ? { [P in Item]-?: NonNullable<Entity[P]> extends (infer U)[] ? NonNullable<U>[] : NonNullable<Entity[P]> }
     : Item extends Record<string, unknown>
-      ? { [K in Extract<keyof Item, keyof Entity>]-?: ApplyJoinsAndSelectNested<Entity[K], Item[K]> }
+      ? { [K in Extract<keyof Item, keyof Entity>]-?: ApplyJoinsAndSelectssNested<Entity[K], Item[K]> }
       : never;
 
-type ApplyJoinsAndSelect<Entity, Spec> =
+type ApplyJoinsAndSelects<Entity, Spec> =
   Spec extends readonly (infer Item)[]
-    ? Entity & UnionToIntersection<ApplyJoinsAndSelectArrayItem<Entity, Item>>
+    ? Entity & UnionToIntersection<ApplyJoinsAndSelectssArrayItem<Entity, Item>>
     : Spec extends Record<string, unknown>
       ? Entity & {
-        [K in Extract<keyof Spec, keyof Entity>]-?: ApplyJoinsAndSelectNested<Entity[K], Spec[K]>;
+        [K in Extract<keyof Spec, keyof Entity>]-?: ApplyJoinsAndSelectssNested<Entity[K], Spec[K]>;
       }
       : Entity;
 
@@ -349,26 +349,26 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     }
   }
 
-  leftJoinsAndSelect<const Spec extends JoinSpec<Entity>>(spec: Spec): QueryBuilder<ApplyLeftJoinsAndSelect<Entity, Spec>, Projected> {
-    const res = this.clone<ApplyLeftJoinsAndSelect<Entity, Spec>>();
+  leftJoinsAndSelects<const Spec extends JoinSpec<Entity>>(spec: Spec): QueryBuilder<ApplyLeftJoinsAndSelects<Entity, Spec>, Projected> {
+    const res = this.clone<ApplyLeftJoinsAndSelects<Entity, Spec>>();
 
     return res.applyRelationSpec({
       spec: spec as Record<string, unknown> | readonly (string | Record<string, unknown>)[],
       parentAlias: res.alias,
       parentMetadata: res.repository.metadata,
       mode: 'leftJoinAndSelect',
-    }) as unknown as QueryBuilder<ApplyLeftJoinsAndSelect<Entity, Spec>, Projected>;
+    }) as unknown as QueryBuilder<ApplyLeftJoinsAndSelects<Entity, Spec>, Projected>;
   }
 
-  joinsAndSelect<const Spec extends JoinSpec<Entity>>(spec: Spec): QueryBuilder<ApplyJoinsAndSelect<Entity, Spec>, Projected> {
-    const res = this.clone<ApplyJoinsAndSelect<Entity, Spec>>();
+  joinsAndSelects<const Spec extends JoinSpec<Entity>>(spec: Spec): QueryBuilder<ApplyJoinsAndSelects<Entity, Spec>, Projected> {
+    const res = this.clone<ApplyJoinsAndSelects<Entity, Spec>>();
 
     return res.applyRelationSpec({
       spec: spec as Record<string, unknown> | readonly (string | Record<string, unknown>)[],
       parentAlias: res.alias,
       parentMetadata: res.repository.metadata,
       mode: 'innerJoinAndSelect',
-    }) as unknown as QueryBuilder<ApplyJoinsAndSelect<Entity, Spec>, Projected>;
+    }) as unknown as QueryBuilder<ApplyJoinsAndSelects<Entity, Spec>, Projected>;
   }
 
   joins<const Spec extends JoinSpec<Entity>>(spec: Spec): QueryBuilder<Entity, Projected> {

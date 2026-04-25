@@ -174,7 +174,7 @@ await ApprovalRequestRepository.qb()
 
 ### Simplified join loading
 
-`leftJoinsAndSelect()` hydrates relations via `LEFT JOIN AND SELECT`. The spec is
+`leftJoinsAndSelects()` hydrates relations via `LEFT JOIN AND SELECT`. The spec is
 either an array of relation names (leaves) or an object whose values are
 themselves specs (for nesting). Keys are restricted to actual relation
 properties of the entity; scalar columns and unknown keys are rejected at
@@ -191,24 +191,24 @@ join.
 
 ```ts
 // Single or multiple leaves
-await UserRepository.qb().leftJoinsAndSelect(['profile']).getMany();
-await UserRepository.qb().leftJoinsAndSelect(['profile', 'posts']).getMany();
+await UserRepository.qb().leftJoinsAndSelects(['profile']).getMany();
+await UserRepository.qb().leftJoinsAndSelects(['profile', 'posts']).getMany();
 
 // Nested — use an object at the level you want to nest, array (or object)
 // for the leaves
-await PostRepository.qb().leftJoinsAndSelect({ user: ['profile'] }).getMany();
-await UserRepository.qb().leftJoinsAndSelect({ posts: { user: ['profile'] } }).getMany();
+await PostRepository.qb().leftJoinsAndSelects({ user: ['profile'] }).getMany();
+await UserRepository.qb().leftJoinsAndSelects({ posts: { user: ['profile'] } }).getMany();
 
 // The alias is the relation name, so you reference it directly in where:
 await UserRepository.qb()
-  .leftJoinsAndSelect(['profile'])
+  .leftJoinsAndSelects(['profile'])
   .where('profile.bio = :bio', { bio: 'hello' })
   .getMany();
 ```
 
 ### Joining without hydrating (`joins` / `leftJoins`)
 
-`joins()` and `leftJoins()` mirror `leftJoinsAndSelect()` — same array/object spec, same
+`joins()` and `leftJoins()` mirror `leftJoinsAndSelects()` — same array/object spec, same
 relation-name aliases — but do **not** select the joined columns. Use them when you
 want to filter or order by a related table without paying to hydrate it.
 
@@ -231,16 +231,16 @@ await PostRepository.qb().joins({ user: ['profile'] }).getMany();
 
 The return type is unchanged — relations are not hydrated, so they remain optional on the entity.
 
-### `joinsAndSelect` — filter and hydrate
+### `joinsAndSelects` — filter and hydrate
 
-`joinsAndSelect()` is the `INNER JOIN + SELECT` counterpart of `leftJoinsAndSelect()`:
+`joinsAndSelects()` is the `INNER JOIN + SELECT` counterpart of `leftJoinsAndSelects()`:
 it hydrates the relation *and* drops rows without a match. Same spec and
-alias rules. Unlike `leftJoinsAndSelect` (which keeps relations nullable to reflect
+alias rules. Unlike `leftJoinsAndSelects` (which keeps relations nullable to reflect
 the LEFT JOIN), the return type marks loaded relations as non-null.
 
 ```ts
 // Only users that have a profile; `profile` is typed as present
-const users = await UserRepository.qb().joinsAndSelect(['profile']).getMany();
+const users = await UserRepository.qb().joinsAndSelects(['profile']).getMany();
 users[0].profile.bio; // no optional chaining needed
 ```
 

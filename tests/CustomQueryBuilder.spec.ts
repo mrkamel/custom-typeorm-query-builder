@@ -286,13 +286,13 @@ describe('CustomQueryBuilder', () => {
     });
   });
 
-  describe('leftJoinsAndSelect', () => {
+  describe('leftJoinsAndSelects', () => {
     it('joins and selects a single to-one relation', async () => {
       const alice = await createUser('alice', 30);
       await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
 
       const result = await UserRepository.qb()
-        .leftJoinsAndSelect(['profile'])
+        .leftJoinsAndSelects(['profile'])
         .where({ id: alice.id })
         .getOne();
 
@@ -305,7 +305,7 @@ describe('CustomQueryBuilder', () => {
       await PostRepository.save({ title: 'one', user_id: alice.id });
 
       const result = await UserRepository.qb()
-        .leftJoinsAndSelect(['profile', 'posts'])
+        .leftJoinsAndSelects(['profile', 'posts'])
         .where({ id: alice.id })
         .getOne();
 
@@ -319,7 +319,7 @@ describe('CustomQueryBuilder', () => {
       await PostRepository.save({ title: 'one', user_id: alice.id });
 
       const result = await PostRepository.qb()
-        .leftJoinsAndSelect({ user: ['profile'] })
+        .leftJoinsAndSelects({ user: ['profile'] })
         .getOne();
 
       expect(result?.user?.id).toBe(alice.id);
@@ -332,7 +332,7 @@ describe('CustomQueryBuilder', () => {
       await PostRepository.save({ title: 'one', user_id: alice.id });
 
       const result = await UserRepository.qb('parent_users')
-        .leftJoinsAndSelect(['profile', { posts: ['user'] }])
+        .leftJoinsAndSelects(['profile', { posts: ['user'] }])
         .where({ id: alice.id })
         .getOne();
 
@@ -348,7 +348,7 @@ describe('CustomQueryBuilder', () => {
       await PostRepository.save({ title: 'two', user_id: alice.id });
 
       const result = await UserRepository.qb()
-        .leftJoinsAndSelect(['profile', 'posts'])
+        .leftJoinsAndSelects(['profile', 'posts'])
         .where({ id: alice.id })
         .getOne();
 
@@ -362,7 +362,7 @@ describe('CustomQueryBuilder', () => {
       await PostRepository.save({ title: 'one', user_id: alice.id });
 
       const result = await PostRepository.qb()
-        .leftJoinsAndSelect({ user: ['profile'] })
+        .leftJoinsAndSelects({ user: ['profile'] })
         .getOne();
 
       expect(result?.user?.id).toBe(alice.id);
@@ -375,7 +375,7 @@ describe('CustomQueryBuilder', () => {
       await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
 
       const result = await UserRepository.qb()
-        .leftJoinsAndSelect(['profile'])
+        .leftJoinsAndSelects(['profile'])
         .orderBy({ name: 'ASC' })
         .getMany();
 
@@ -390,7 +390,7 @@ describe('CustomQueryBuilder', () => {
       await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
 
       const result = await UserRepository.qb()
-        .leftJoinsAndSelect(['profile'])
+        .leftJoinsAndSelects(['profile'])
         .where('profile.bio = :bio', { bio: 'hello' })
         .getMany();
 
@@ -401,12 +401,12 @@ describe('CustomQueryBuilder', () => {
 
       const _typeOnly = () => {
         // @ts-expect-error nonexistent is not a relation on UserEntity
-        UserRepository.qb().leftJoinsAndSelect(['nonexistent']);
+        UserRepository.qb().leftJoinsAndSelects(['nonexistent']);
 
         // @ts-expect-error name is a scalar column, not a relation
-        UserRepository.qb().leftJoinsAndSelect(['name']);
+        UserRepository.qb().leftJoinsAndSelects(['name']);
 
-        UserRepository.qb().leftJoinsAndSelect({
+        UserRepository.qb().leftJoinsAndSelects({
           // @ts-expect-error title is a scalar, not a relation on PostEntity
           posts: ['title'],
         });
@@ -414,14 +414,14 @@ describe('CustomQueryBuilder', () => {
     });
   });
 
-  describe('joinsAndSelect', () => {
+  describe('joinsAndSelects', () => {
     it('inner-joins a single relation and hydrates it', async () => {
       const alice = await createUser('alice', 30);
       await createUser('bob', 40);
       await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
 
       const result = await UserRepository.qb()
-        .joinsAndSelect(['profile'])
+        .joinsAndSelects(['profile'])
         .getMany();
 
       expect(result.map((user) => user.id)).toEqual([alice.id]);
@@ -434,7 +434,7 @@ describe('CustomQueryBuilder', () => {
       await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
 
       const result = await UserRepository.qb()
-        .joinsAndSelect(['profile'])
+        .joinsAndSelects(['profile'])
         .orderBy({ name: 'ASC' })
         .getMany();
 
@@ -451,7 +451,7 @@ describe('CustomQueryBuilder', () => {
       await PostRepository.save({ title: 'two', user_id: bob.id });
 
       const result = await PostRepository.qb()
-        .joinsAndSelect({ user: ['profile'] })
+        .joinsAndSelects({ user: ['profile'] })
         .getMany();
 
       expect(result.map((post) => post.title)).toEqual(['one']);
@@ -465,7 +465,7 @@ describe('CustomQueryBuilder', () => {
       await ProfileRepository.save({ bio: 'other', user_id: (await createUser('carol', 50)).id });
 
       const result = await UserRepository.qb()
-        .joinsAndSelect(['profile'])
+        .joinsAndSelects(['profile'])
         .where('profile.bio = :bio', { bio: 'hello' })
         .getMany();
 
@@ -476,12 +476,12 @@ describe('CustomQueryBuilder', () => {
 
       const _typeOnly = () => {
         // @ts-expect-error nonexistent is not a relation on UserEntity
-        UserRepository.qb().joinsAndSelect(['nonexistent']);
+        UserRepository.qb().joinsAndSelects(['nonexistent']);
 
         // @ts-expect-error name is a scalar column, not a relation
-        UserRepository.qb().joinsAndSelect(['name']);
+        UserRepository.qb().joinsAndSelects(['name']);
 
-        UserRepository.qb().joinsAndSelect({
+        UserRepository.qb().joinsAndSelects({
           // @ts-expect-error title is a scalar, not a relation on PostEntity
           posts: ['title'],
         });
@@ -722,7 +722,7 @@ describe('CustomQueryBuilder', () => {
       await PostRepository.save({ title: 'b1', user_id: bob.id });
 
       const result = await UserRepository.qb()
-        .leftJoinsAndSelect(['posts'])
+        .leftJoinsAndSelects(['posts'])
         .orderBy({ name: 'ASC' })
         .take(1)
         .getMany();

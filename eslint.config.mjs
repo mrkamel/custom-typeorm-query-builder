@@ -9,7 +9,12 @@ export default [
     rules: {
       semi: ['error', 'always'],
       quotes: ['error', 'single', { avoidEscape: true }],
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      'no-trailing-spaces': 'error',
+      '@typescript-eslint/no-unused-vars': ['error', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',
+      }],
     },
   },
 ];

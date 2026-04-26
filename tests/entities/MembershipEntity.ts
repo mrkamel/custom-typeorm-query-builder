@@ -2,10 +2,10 @@ import { Column, Entity, PrimaryColumn } from 'typeorm';
 
 @Entity('memberships')
 export class MembershipEntity {
-  @PrimaryColumn({ type: 'uuid' })
+  @PrimaryColumn({ type: 'varchar', length: 36 })
   tenant_id!: string;
 
-  @PrimaryColumn({ type: 'uuid' })
+  @PrimaryColumn({ type: 'varchar', length: 36 })
   user_id!: string;
 
   @Column({ type: 'text' })

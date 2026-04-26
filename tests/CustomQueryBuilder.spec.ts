@@ -5,7 +5,10 @@ import { PostRepository } from './repositories/PostRepository';
 import { CodeRepository } from './repositories/CodeRepository';
 import { Code } from './entities/CodeEntity';
 import { MembershipRepository } from './repositories/MembershipRepository';
+import { dataSource } from './dataSource';
 import { randomUUID } from 'crypto';
+
+const isSqlite = dataSource.options.type === 'better-sqlite3';
 
 async function createUser(name: string, age: number | null = null) {
   return await UserRepository.save({ name, age });
@@ -101,7 +104,7 @@ describe('CustomQueryBuilder', () => {
       const alice = await createUser('alice', 30);
 
       const result = await UserRepository.qb()
-        .where('users.age::int = :int', { int: 30 })
+        .where('CAST(users.age AS INTEGER) = :int', { int: 30 })
         .getMany();
 
       expect(result.map((user) => user.id)).toEqual([alice.id]);
@@ -755,12 +758,12 @@ describe('CustomQueryBuilder', () => {
       await createUser('bob', 25);
 
       const rows = await UserRepository.qb()
-        .select(['users.name AS name', 'COUNT(*)::int AS count'])
+        .select(['users.name AS name', 'COUNT(*) AS count'])
         .groupBy('users.name')
         .orderBy('name', 'ASC')
         .getRawMany();
 
-      expect(rows).toEqual([
+      expect(rows.map((row) => ({ name: row.name, count: Number(row.count) }))).toEqual([
         { name: 'alice', count: 2 },
         { name: 'bob', count: 1 },
       ]);
@@ -1032,6 +1035,8 @@ describe('CustomQueryBuilder', () => {
 
   describe('setLock', () => {
     it('appends FOR UPDATE for pessimistic_write', async () => {
+      if (isSqlite) return;
+
       const sql = UserRepository.qb().setLock('pessimistic_write').getSql();
       expect(sql).toMatch(/FOR UPDATE/i);
     });

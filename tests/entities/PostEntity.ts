@@ -12,7 +12,7 @@ export class PostEntity {
   @Column({ type: 'boolean', default: false })
   published!: boolean;
 
-  @ManyToOne(() => UserEntity, (user) => user.posts)
+  @ManyToOne(() => UserEntity, (user) => user.posts, { createForeignKeyConstraints: false })
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
 

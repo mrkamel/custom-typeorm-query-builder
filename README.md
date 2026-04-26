@@ -58,7 +58,7 @@ await UserRepository.qb().whereNot({ status: ['archived', 'deleted'] }).getMany(
 // WHERE "users"."status" NOT IN ($1, $2)
 ```
 
-Empty arrays are handled the same way ActiveRecord does:
+Empty arrays are handled using:
 
 - `where({ id: [] })` → `WHERE 1 = 0` (matches no rows)
 - `whereNot({ id: [] })` → `WHERE 1 = 1` (matches all rows)
@@ -248,11 +248,20 @@ users[0].profile.bio; // no optional chaining needed
 
 ```ts
 const user = await UserRepository.qb()
-  .loadRelationCountAndMap<'postCount', ['posts']>('users.postCount', 'users.posts')
+  .loadRelationCountAndMap<['posts'], 'postCount'>('users.postCount', 'users.posts')
   .where({ id })
   .getOne();
 
 user?.postCount; // typed as number
+
+// Attach the count to a joined entity instead of the root:
+const post = await PostRepository.qb()
+  .leftJoinsAndSelects(['user'])
+  .loadRelationCountAndMap<['user', 'posts'], 'postCount'>('user.postCount', 'user.posts')
+  .where({ id })
+  .getOne();
+
+post?.user.postCount; // typed as number on the joined user
 ```
 
 ### Sorting, paging, grouping

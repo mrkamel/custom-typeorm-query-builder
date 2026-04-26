@@ -596,17 +596,33 @@ describe('CustomQueryBuilder', () => {
   });
 
   describe('loadRelationCountAndMap', () => {
-    it('counts a relation and maps the result onto a property', async () => {
+    it('counts a relation and maps the result onto a property on the root entity', async () => {
       const alice = await createUser('alice', 30);
       await PostRepository.save({ title: 'one', user_id: alice.id });
       await PostRepository.save({ title: 'two', user_id: alice.id });
 
       const result = await UserRepository.qb()
-        .loadRelationCountAndMap<'postCount', ['posts']>('users.postCount', 'users.posts')
+        .loadRelationCountAndMap<['posts'], 'postCount'>('users.postCount', 'users.posts')
         .where({ id: alice.id })
         .getOne();
 
       expect(result?.postCount).toBe(2);
+    });
+
+    it('attaches the count to a joined entity (non-root TargetPath)', async () => {
+      const alice = await createUser('alice', 30);
+      const focus = await PostRepository.save({ title: 'focus', user_id: alice.id });
+      await PostRepository.save({ title: 'two', user_id: alice.id });
+      await PostRepository.save({ title: 'three', user_id: alice.id });
+
+      const result = await PostRepository.qb()
+        .leftJoinsAndSelects(['user'])
+        .loadRelationCountAndMap<['user', 'posts'], 'postCount'>('user.postCount', 'user.posts')
+        .where({ id: focus.id })
+        .getOne();
+
+      expect(result?.user?.id).toBe(alice.id);
+      expect(result?.user?.postCount).toBe(3);
     });
   });
 

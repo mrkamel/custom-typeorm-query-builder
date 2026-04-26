@@ -33,10 +33,36 @@ type ApplyPathLeft<Entity, Path extends readonly string[]> =
       : Entity
     : Entity;
 
+type AddCountAtPath<Entity, TargetPath extends readonly string[], Prop extends string> =
+  TargetPath extends readonly []
+    ? Entity & { [K in Prop]-?: number }
+    : TargetPath extends readonly [infer Head extends string, ...infer Tail extends readonly string[]]
+      ? Head extends keyof Entity
+        ? Entity & {
+          [K in Head]-?: NonNullable<Entity[Head]> extends (infer U)[]
+            ? AddCountAtPath<NonNullable<U>, Tail, Prop>[]
+            : AddCountAtPath<NonNullable<Entity[Head]>, Tail, Prop>;
+        }
+        : Entity
+      : Entity;
+
 type DottedRelation<Entity, Path extends readonly string[]> =
   Path extends readonly [...infer Chain extends readonly string[], infer Leaf extends string]
     ? Leaf extends keyof ResolveEntity<Entity, Chain> & string
       ? `${string}.${Leaf}`
+      : never
+    : never;
+
+type LeafAlias<TargetPath extends readonly string[]> =
+  TargetPath extends readonly [...readonly string[], infer Last extends string] ? Last : string;
+
+type PathInit<Path extends readonly string[]> =
+  Path extends readonly [...infer Init extends readonly string[], string] ? Init : never;
+
+type CountedRelationPath<Entity, Path extends readonly string[]> =
+  Path extends readonly [...infer Init extends readonly string[], infer Leaf extends string]
+    ? Leaf extends keyof ResolveEntity<Entity, Init> & string
+      ? `${LeafAlias<Init>}.${Leaf}`
       : never
     : never;
 
@@ -70,45 +96,45 @@ type JoinSpec<Entity> =
   | readonly JoinSpecItem<Entity>[]
   | { [K in RelationKey<Entity>]?: JoinSpec<UnwrapRelation<Entity[K]>> };
 
-type ApplyLeftJoinsAndSelectssNested<Value, NestedSpec> =
+type ApplyLeftJoinsAndSelectsNested<Value, NestedSpec> =
   NonNullable<Value> extends (infer U)[]
     ? ApplyLeftJoinsAndSelects<NonNullable<U>, NestedSpec>[]
     : ApplyLeftJoinsAndSelects<NonNullable<Value>, NestedSpec> | null;
 
-type ApplyLeftJoinsAndSelectssArrayItem<Entity, Item> =
+type ApplyLeftJoinsAndSelectsArrayItem<Entity, Item> =
   Item extends keyof Entity
     ? { [P in Item]-?: NonNullable<Entity[P]> extends (infer U)[] ? NonNullable<U>[] : NonNullable<Entity[P]> | null }
     : Item extends Record<string, unknown>
-      ? { [K in Extract<keyof Item, keyof Entity>]-?: ApplyLeftJoinsAndSelectssNested<Entity[K], Item[K]> }
+      ? { [K in Extract<keyof Item, keyof Entity>]-?: ApplyLeftJoinsAndSelectsNested<Entity[K], Item[K]> }
       : never;
 
 type ApplyLeftJoinsAndSelects<Entity, Spec> =
   Spec extends readonly (infer Item)[]
-    ? Entity & UnionToIntersection<ApplyLeftJoinsAndSelectssArrayItem<Entity, Item>>
+    ? Entity & UnionToIntersection<ApplyLeftJoinsAndSelectsArrayItem<Entity, Item>>
     : Spec extends Record<string, unknown>
       ? Entity & {
-        [K in Extract<keyof Spec, keyof Entity>]-?: ApplyLeftJoinsAndSelectssNested<Entity[K], Spec[K]>;
+        [K in Extract<keyof Spec, keyof Entity>]-?: ApplyLeftJoinsAndSelectsNested<Entity[K], Spec[K]>;
       }
       : Entity;
 
-type ApplyJoinsAndSelectssNested<Value, NestedSpec> =
+type ApplyJoinsAndSelectsNested<Value, NestedSpec> =
   NonNullable<Value> extends (infer U)[]
     ? ApplyJoinsAndSelects<NonNullable<U>, NestedSpec>[]
     : ApplyJoinsAndSelects<NonNullable<Value>, NestedSpec>;
 
-type ApplyJoinsAndSelectssArrayItem<Entity, Item> =
+type ApplyJoinsAndSelectsArrayItem<Entity, Item> =
   Item extends keyof Entity
     ? { [P in Item]-?: NonNullable<Entity[P]> extends (infer U)[] ? NonNullable<U>[] : NonNullable<Entity[P]> }
     : Item extends Record<string, unknown>
-      ? { [K in Extract<keyof Item, keyof Entity>]-?: ApplyJoinsAndSelectssNested<Entity[K], Item[K]> }
+      ? { [K in Extract<keyof Item, keyof Entity>]-?: ApplyJoinsAndSelectsNested<Entity[K], Item[K]> }
       : never;
 
 type ApplyJoinsAndSelects<Entity, Spec> =
   Spec extends readonly (infer Item)[]
-    ? Entity & UnionToIntersection<ApplyJoinsAndSelectssArrayItem<Entity, Item>>
+    ? Entity & UnionToIntersection<ApplyJoinsAndSelectsArrayItem<Entity, Item>>
     : Spec extends Record<string, unknown>
       ? Entity & {
-        [K in Extract<keyof Spec, keyof Entity>]-?: ApplyJoinsAndSelectssNested<Entity[K], Spec[K]>;
+        [K in Extract<keyof Spec, keyof Entity>]-?: ApplyJoinsAndSelectsNested<Entity[K], Spec[K]>;
       }
       : Entity;
 
@@ -411,14 +437,17 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this;
   }
 
-  loadRelationCountAndMap<const MapToProperty extends string, const Path extends readonly string[]>(
-    mapTo: `${string}.${MapToProperty}`,
-    relationPath: DottedRelation<Entity, Path>,
+  loadRelationCountAndMap<
+    const Path extends readonly [...readonly string[], string],
+    const MapToProperty extends string,
+  >(
+    mapTo: `${LeafAlias<PathInit<Path>>}.${MapToProperty}`,
+    relationPath: CountedRelationPath<Entity, Path>,
     alias?: string,
     condition?: string,
     parameters?: ObjectLiteral,
-  ): QueryBuilder<Entity & { [Key in MapToProperty]-?: number }, Projected> {
-    return this.clone<Entity & { [Key in MapToProperty]-?: number }>().applyLoadRelationCountAndMap(mapTo, relationPath, alias, condition, parameters);
+  ): QueryBuilder<AddCountAtPath<Entity, PathInit<Path>, MapToProperty>, Projected> {
+    return this.clone<AddCountAtPath<Entity, PathInit<Path>, MapToProperty>>().applyLoadRelationCountAndMap(mapTo, relationPath, alias, condition, parameters);
   }
 
   private applyOrderBy(

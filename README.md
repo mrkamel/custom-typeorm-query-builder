@@ -394,6 +394,11 @@ const rows = await raw.getMany();
 
 The returned builder is a clone, so mutating it never leaks back into the wrapper you called it on.
 
+There is intentionally no `forEachRaw` counterpart to `forEach`. With any
+row-multiplying join in the chain, raw-row pagination would cut a single PK's
+joined rows across a `LIMIT` boundary and the cursor would advance past the
+leftover rows, silently skipping data.
+
 ### Immutability
 
 Every chained call returns a fresh builder, so a base query can be safely reused as a starting point:

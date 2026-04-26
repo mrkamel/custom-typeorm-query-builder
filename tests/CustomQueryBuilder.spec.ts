@@ -963,6 +963,20 @@ describe('CustomQueryBuilder', () => {
       expect(yielded).toEqual(expected.map((row) => ({ tenant_id: row.tenant_id, user_id: row.user_id })));
     });
 
+    it('ignores any prior skip/take/limit in the chain', async () => {
+      const created = [];
+
+      for (let index = 0; index < 5; index += 1) created.push(await createUser(`user${index}`, index));
+
+      const yielded: string[] = [];
+
+      for await (const row of UserRepository.qb().skip(2).take(1).limit(1).forEach({ batchSize: 2 })) {
+        yielded.push(row.id);
+      }
+
+      expect(yielded.sort()).toEqual(created.map((user) => user.id).sort());
+    });
+
     it('yields nothing for an empty result set', async () => {
       const yielded: string[] = [];
 
@@ -982,50 +996,6 @@ describe('CustomQueryBuilder', () => {
       await expect((async () => {
         for await (const _row of escapeHatch.forEach()) { /* unreachable */ }
       })()).rejects.toThrow(/forEach cannot be used after select/);
-    });
-  });
-
-  describe('forEachRaw', () => {
-    it('yields raw rows across multiple batches', async () => {
-      const users = [];
-      for (let index = 0; index < 5; index += 1) users.push(await createUser(`user${index}`, index));
-
-      const yielded: string[] = [];
-      for await (const row of UserRepository.qb().forEachRaw({ batchSize: 2 })) {
-        yielded.push(row.users_id as string);
-      }
-
-      expect(yielded.sort()).toEqual(users.map((user) => user.id).sort());
-    });
-
-    it('works after select() and auto-includes the PK for cursor advancement', async () => {
-      const users = [];
-      for (let index = 0; index < 5; index += 1) users.push(await createUser(`user${index}`, 20 + index));
-
-      const yielded: { name: string, age: number }[] = [];
-      for await (const row of UserRepository.qb().select(['users.name', 'users.age']).forEachRaw({ batchSize: 2 })) {
-        yielded.push({ name: row.users_name as string, age: row.users_age as number });
-      }
-
-      expect(yielded.map((row) => row.name).sort()).toEqual(users.map((user) => user.name).sort());
-      expect(yielded.every((row) => typeof row.age === 'number')).toBe(true);
-    });
-
-    it('iterates correctly with a composite primary key', async () => {
-      const tenant = randomUUID();
-      const rows = [
-        { tenant_id: tenant, user_id: randomUUID(), role: 'admin' },
-        { tenant_id: tenant, user_id: randomUUID(), role: 'member' },
-        { tenant_id: tenant, user_id: randomUUID(), role: 'viewer' },
-      ];
-      for (const row of rows) await MembershipRepository.save(row);
-
-      const yielded: string[] = [];
-      for await (const row of MembershipRepository.qb().forEachRaw({ batchSize: 2 })) {
-        yielded.push(row.memberships_user_id as string);
-      }
-
-      expect(yielded.sort()).toEqual(rows.map((row) => row.user_id).sort());
     });
   });
 

@@ -28,7 +28,7 @@ type ApplyPathLeft<Entity, Path extends readonly string[]> =
       ? Entity & {
         [K in Head]-?: NonNullable<Entity[Head]> extends (infer U)[]
           ? ApplyPathLeft<NonNullable<U>, Tail>[]
-          : ApplyPathLeft<NonNullable<Entity[Head]>, Tail> | null;
+          : ApplyPathLeft<NonNullable<Entity[Head]>, Tail> | Extract<Entity[Head], null>;
       }
       : Entity
     : Entity;
@@ -99,11 +99,11 @@ type JoinSpec<Entity> =
 type ApplyLeftJoinsAndSelectsNested<Value, NestedSpec> =
   NonNullable<Value> extends (infer U)[]
     ? ApplyLeftJoinsAndSelects<NonNullable<U>, NestedSpec>[]
-    : ApplyLeftJoinsAndSelects<NonNullable<Value>, NestedSpec> | null;
+    : ApplyLeftJoinsAndSelects<NonNullable<Value>, NestedSpec> | Extract<Value, null>;
 
 type ApplyLeftJoinsAndSelectsArrayItem<Entity, Item> =
   Item extends keyof Entity
-    ? { [P in Item]-?: NonNullable<Entity[P]> extends (infer U)[] ? NonNullable<U>[] : NonNullable<Entity[P]> | null }
+    ? { [P in Item]-?: Exclude<Entity[P], undefined> }
     : Item extends Record<string, unknown>
       ? { [K in Extract<keyof Item, keyof Entity>]-?: ApplyLeftJoinsAndSelectsNested<Entity[K], Item[K]> }
       : never;
@@ -564,10 +564,10 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this.qb.getManyAndCount();
   }
 
-  private async *iterate<Row>(
-    batchSize: number,
-    mode: 'entity' | 'raw',
-  ): AsyncGenerator<Row, void, undefined> {
+  async *forEach(options: { batchSize?: number } = {}): AsyncGenerator<Entity, void, undefined> {
+    if (this.config.selects.length > 0) throw new CustomQueryBuilderError('forEach cannot be used after select');
+
+    const batchSize = options.batchSize ?? 1000;
     const primaryColumns = this.repository.metadata.primaryColumns;
 
     if (primaryColumns.length === 0) {
@@ -580,10 +580,9 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     while (true) {
       const batch = this.clone();
 
-      // Always ensure PK columns are in the SELECT list so we can advance the cursor even when the user's projection omits them.
-      primaryColumns.forEach((col) => batch.qb.addSelect(`${this.alias}.${col.propertyName}`));
+      batch.qb.skip().take().limit(); // Remove any prior skip/take/limit
 
-      // First call replaces any prior orderBy; subsequent calls append.
+      // First call replaces any prior limit and orderBy; subsequent calls append.
       batch.qb.orderBy(`${this.alias}.${primaryColumns[0].propertyName}`, 'ASC');
       primaryColumns.slice(1).forEach((col) => batch.qb.addOrderBy(`${this.alias}.${col.propertyName}`, 'ASC'));
 
@@ -598,31 +597,18 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
         batch.qb.andWhere(`(${newCondition})`, newParameters);
       }
 
-      // take() routes through TypeORM's entity-level distinctAlias pagination — only valid for entity mode.
-      if (mode === 'entity') batch.qb.take(batchSize);
-      else batch.qb.limit(batchSize);
+      batch.qb.take(batchSize);
 
-      const rows = mode === 'entity' ? await batch.qb.getMany() : await batch.qb.getRawMany();
+      const rows = await batch.qb.getMany();
 
-      for (const row of rows) yield row as Row;
+      for (const row of rows) yield row;
 
       if (rows.length < batchSize) return;
 
       const last = rows[rows.length - 1] as ObjectLiteral;
 
-      cursor = mode === 'entity'
-        ? primaryColumns.map((col) => last[col.propertyName])
-        : primaryColumns.map((col) => last[`${this.alias}_${col.databaseName}`]);
+      cursor = primaryColumns.map((col) => last[col.propertyName]);
     }
-  }
-
-  async *forEach(options: { batchSize?: number } = {}): AsyncGenerator<Entity, void, undefined> {
-    if (this.config.selects.length > 0) throw new CustomQueryBuilderError('forEach cannot be used after select');
-    yield* this.iterate<Entity>(options.batchSize ?? 1000, 'entity');
-  }
-
-  async *forEachRaw(options: { batchSize?: number } = {}): AsyncGenerator<ObjectLiteral, void, undefined> {
-    yield* this.iterate<ObjectLiteral>(options.batchSize ?? 1000, 'raw');
   }
 
   private applySetLock(lockMode: 'optimistic' | 'pessimistic_read' | 'pessimistic_write' | 'dirty_read', lockVersion?: number | Date) {
@@ -645,12 +631,11 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this.qb.clone().delete().execute();
   }
 
-  update(updates: { [Key in keyof Entity]?: Entity[Key] | (() => string) }, parameters?: ObjectLiteral) {
-    const cloned = this.clone();
-    const updateQb = cloned.qb.update();
+  private applyUpdate(updates: { [Key in keyof Entity]?: Entity[Key] | (() => string) }, parameters?: ObjectLiteral) {
+    const updateQb = this.qb.update();
 
     const parameterNameMap = Object.keys(parameters || {}).reduce((acc, cur) => {
-      acc[cur] = cloned.incrementParameter();
+      acc[cur] = this.incrementParameter();
       return acc;
     }, {} as Record<string, string>);
 
@@ -679,6 +664,10 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     });
 
     return updateQb.execute();
+  }
+
+  update(updates: { [Key in keyof Entity]?: Entity[Key] | (() => string) }, parameters?: ObjectLiteral) {
+    return this.clone().applyUpdate(updates, parameters);
   }
 
   private applyDistinct(distinct: boolean = true) {

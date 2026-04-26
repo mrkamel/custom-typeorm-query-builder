@@ -360,7 +360,10 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
       throw new CustomQueryBuilderError(`Relation "${relation}" not found on ${parentMetadata.name}`);
     }
 
-    // Use the relation property name as the alias (flat, not parent-prefixed for nested). Collisions across multiple paths to the same relation name are the user's problem to resolve via the single-relation join methods.
+    // Use the relation property name as the alias (flat, not parent-prefixed for nested).
+    // Collisions across multiple paths to the same relation name are the user's problem
+    // to resolve via the single-relation join methods.
+
     const newAlias = relationMetadata.propertyName;
 
     this.qb[mode](`${parentAlias}.${relation}`, newAlias);

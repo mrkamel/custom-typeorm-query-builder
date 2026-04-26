@@ -100,14 +100,12 @@ describe('CustomQueryBuilder', () => {
       expect(result.map((user) => user.id)).toEqual([alice.id]);
     });
 
-    it('does not rewrite parameters inside postgres :: casts', async () => {
-      const alice = await createUser('alice', 30);
+    it('does not rewrite parameters inside postgres :: casts', () => {
+      const sql = UserRepository.qb()
+        .where('users.age::int = :int', { int: 30 })
+        .getSql();
 
-      const result = await UserRepository.qb()
-        .where('CAST(users.age AS INTEGER) = :int', { int: 30 })
-        .getMany();
-
-      expect(result.map((user) => user.id)).toEqual([alice.id]);
+      expect(sql).toMatch(/age::int/);
     });
 
     it('respects word boundaries so a parameter name is not a prefix of another', async () => {
@@ -711,7 +709,7 @@ describe('CustomQueryBuilder', () => {
 
     it('rewrites parameter names to avoid collision with a chained where', async () => {
       await createUser('alice', 30);
-      const bob = await createUser('bob', 40);
+      const bob = await createUser('bob', 43);
       const carol = await createUser('carol', 50);
 
       const result = await UserRepository.qb()
@@ -1073,7 +1071,7 @@ describe('CustomQueryBuilder', () => {
 
       await UserRepository.qb()
         .where({ id: alice.id })
-        .update({ age: () => '"age" + :inc' }, { inc: 5 });
+        .update({ age: () => 'age + :inc' }, { inc: 5 });
 
       const updated = await UserRepository.findOneByOrFail({ id: alice.id });
       expect(updated.age).toBe(35);

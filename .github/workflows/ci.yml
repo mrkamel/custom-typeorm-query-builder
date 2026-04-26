@@ -18,7 +18,7 @@ jobs:
       - run: yarn lint
       - run: yarn typecheck
 
-  test:
+  test-postgres:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -35,11 +35,58 @@ jobs:
           --health-timeout 5s
           --health-retries 30
     env:
+      DB_DRIVER: postgres
       PGHOST: localhost
       PGPORT: 5544
       PGUSER: test
       PGPASSWORD: test
       PGDATABASE: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - run: yarn test
+
+  test-mysql:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: test
+          MYSQL_USER: test
+          MYSQL_PASSWORD: test
+          MYSQL_DATABASE: test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -ptest"
+          --health-interval 1s
+          --health-timeout 5s
+          --health-retries 60
+    env:
+      DB_DRIVER: mysql
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_PORT: 3306
+      MYSQL_USER: test
+      MYSQL_PASSWORD: test
+      MYSQL_DATABASE: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - run: yarn test
+
+  test-sqlite:
+    runs-on: ubuntu-latest
+    env:
+      DB_DRIVER: sqlite
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

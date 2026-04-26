@@ -9,7 +9,7 @@ export class ProfileEntity {
   @Column({ type: 'text' })
   bio!: string;
 
-  @OneToOne(() => UserEntity, (user) => user.profile)
+  @OneToOne(() => UserEntity, (user) => user.profile, { createForeignKeyConstraints: false })
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
 

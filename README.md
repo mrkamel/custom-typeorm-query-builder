@@ -46,6 +46,81 @@ await UserRepository.qb().whereNot({ age: null }).getMany();
 
 Object conditions auto-`AND` and emit `IS NULL` / `IS NOT NULL` for `null` values.
 
+### `IN` / `NOT IN` via array values
+
+Pass an array as the value to get `IN` (or `NOT IN` with `whereNot`):
+
+```ts
+await UserRepository.qb().where({ id: [1, 2, 3] }).getMany();
+// WHERE "users"."id" IN ($1, $2, $3)
+
+await UserRepository.qb().whereNot({ status: ['archived', 'deleted'] }).getMany();
+// WHERE "users"."status" NOT IN ($1, $2)
+```
+
+Empty arrays are handled using:
+
+- `where({ id: [] })` → `WHERE 1 = 0` (matches no rows)
+- `whereNot({ id: [] })` → `WHERE 1 = 1` (matches all rows)
+
+### Object form value rules
+
+The object form of `where` / `whereNot` distinguishes three column shapes:
+
+1. **Scalar columns** (`string`, `number`, `boolean` and their
+   nullable variants) — strict typing. The value must match the column's
+   TS type, optionally as an array for `IN`/`NOT IN`.
+
+   ```ts
+   await UserRepository.qb().where({ name: 'alice' }).getMany();
+   await UserRepository.qb().where({ id: [1, 2, 3] }).getMany();
+   ```
+
+2. **Non-scalar non-array columns** (transformer-wrapped types like
+   `Decimal` / `UUID` / branded IDs, JSONB-shaped objects, …) — pass any
+   scalar (string, number, boolean) and let the database coerce.
+   The wrapper instance itself is *not* accepted; pass its serialized
+   form. The value comes back hydrated through the column's `from`
+   transformer on read.
+
+   ```ts
+   // Decimal column: pass a string, Postgres coerces to numeric
+   await OrderRepository.qb().where({ total: '99.95' }).getMany();
+
+   // UUID column with a wrapper class: pass the canonical string
+   await UserRepository.qb().where({ id: '00000000-0000-…' }).getMany();
+   ```
+
+3. **Array-typed columns** (`text[]`, JSONB-of-array, …) — rejected at
+   the type level. Equality, `IN`, containment (`@>`), and `= ANY` are
+   all valid SQL operations against array columns and we can't guess
+   which you mean. Use raw SQL.
+
+   ```ts
+   await PostRepository.qb()
+     .where('posts.tags @> :tags', { tags: ['featured'] })
+     .getMany();
+   ```
+
+For anything more exotic (JSONB containment, key extraction, casting,
+custom operators) drop to raw SQL — you pick the operator instead of us
+guessing:
+
+```ts
+await EventRepository.qb()
+  .where('events.metadata @> :metadata', { metadata: { source: 'webhook' } })
+  .getMany();
+```
+
+We deliberately do *not* invoke the column's `to` transformer on values
+passed through the object form. A transformer like
+`to: state => state.toLowerCase()` would turn
+`where({ state: 'New York' })` into a query for `'new york'` — the right
+rows for the wrong-looking reason. The case-mismatch returning zero rows
+is a more noticeable failure than silent normalization returning
+unexpected matches. If you need the transformer applied, call it
+yourself or use raw SQL.
+
 ### Mixing raw SQL with object conditions
 
 Each call wraps its raw fragment in `(...)` so precedence is preserved when combined with later `where`s:
@@ -97,15 +172,96 @@ await ApprovalRequestRepository.qb()
   .getMany();
 ```
 
+### Simplified join loading
+
+`leftJoinsAndSelects()` hydrates relations via `LEFT JOIN AND SELECT`. The spec is
+either an array of relation names (leaves) or an object whose values are
+themselves specs (for nesting). Keys are restricted to actual relation
+properties of the entity; scalar columns and unknown keys are rejected at
+the type level. The return type is narrowed so loaded relations become
+non-nullable.
+
+Aliases are the relation property name — same as what you wrote. So
+`['profile']` joins as `profile`, nested `{ posts: ['user'] }` joins as
+`posts` and `user`. If two paths in the same query collide on the relation
+name (e.g. two relations on the same entity both pointing at `User`, or a
+nested name shadowing a top-level one), drop to the single-relation
+`leftJoinAndSelect` form and pick an explicit alias for the conflicting
+join.
+
+```ts
+// Single or multiple leaves
+await UserRepository.qb().leftJoinsAndSelects(['profile']).getMany();
+await UserRepository.qb().leftJoinsAndSelects(['profile', 'posts']).getMany();
+
+// Nested — use an object at the level you want to nest, array (or object)
+// for the leaves
+await PostRepository.qb().leftJoinsAndSelects({ user: ['profile'] }).getMany();
+await UserRepository.qb().leftJoinsAndSelects({ posts: { user: ['profile'] } }).getMany();
+
+// The alias is the relation name, so you reference it directly in where:
+await UserRepository.qb()
+  .leftJoinsAndSelects(['profile'])
+  .where('profile.bio = :bio', { bio: 'hello' })
+  .getMany();
+```
+
+### Joining without hydrating (`joins` / `leftJoins`)
+
+`joins()` and `leftJoins()` mirror `leftJoinsAndSelects()` — same array/object spec, same
+relation-name aliases — but do **not** select the joined columns. Use them when you
+want to filter or order by a related table without paying to hydrate it.
+
+- `joins(spec)` → `INNER JOIN` (drops rows without a match)
+- `leftJoins(spec)` → `LEFT JOIN` (keeps rows without a match)
+
+```ts
+// Only return users that have a profile
+await UserRepository.qb().joins(['profile']).getMany();
+
+// Keep everyone, but expose the profile alias for filtering/ordering
+await UserRepository.qb()
+  .leftJoins(['profile'])
+  .where('profile.bio IS NOT NULL')
+  .getMany();
+
+// Nested
+await PostRepository.qb().joins({ user: ['profile'] }).getMany();
+```
+
+The return type is unchanged — relations are not hydrated, so they remain optional on the entity.
+
+### `joinsAndSelects` — filter and hydrate
+
+`joinsAndSelects()` is the `INNER JOIN + SELECT` counterpart of `leftJoinsAndSelects()`:
+it hydrates the relation *and* drops rows without a match. Same spec and
+alias rules. Unlike `leftJoinsAndSelects` (which keeps relations nullable to reflect
+the LEFT JOIN), the return type marks loaded relations as non-null.
+
+```ts
+// Only users that have a profile; `profile` is typed as present
+const users = await UserRepository.qb().joinsAndSelects(['profile']).getMany();
+users[0].profile.bio; // no optional chaining needed
+```
+
 ### Counting a relation onto a property
 
 ```ts
 const user = await UserRepository.qb()
-  .loadRelationCountAndMap<'postCount', ['posts']>('users.postCount', 'users.posts')
+  .loadRelationCountAndMap<['posts'], 'postCount'>('users.postCount', 'users.posts')
   .where({ id })
   .getOne();
 
 user?.postCount; // typed as number
+
+// Attach the count to a joined entity instead of the root:
+const post = await PostRepository.qb()
+  .leftJoinsAndSelects(['user'])
+  .loadRelationCountAndMap<['user', 'posts'], 'postCount'>('user.postCount', 'user.posts')
+  .where({ id })
+  .getOne();
+
+post?.user.postCount; // typed as number on the joined user
 ```
 
 ### Sorting, paging, grouping
@@ -128,9 +284,44 @@ await UserRepository.qb()
   .getRawMany();
 ```
 
+When `sort` is a raw string and you need bound parameters, pass them as the
+second argument and embed the direction in the SQL itself. Names are
+rewritten the same way as in `where()`, so they can't collide with
+parameters used elsewhere in the chain:
+
+```ts
+await TermPolicyRepository.qb()
+  .orderBy('ts_rank(search_vector, to_tsquery(\'simple\', :q)) DESC', { q: prefixQuery })
+  .getMany();
+
+// Same name reused across where + orderBy is safe — both get rewritten:
+await UserRepository.qb()
+  .where('users.age >= :value', { value: 40 })
+  .orderBy('ABS(users.age - :value) ASC', { value: 45 })
+  .getMany();
+```
+
+`skip` / `take` are the ORM-level pagination knobs — they become `OFFSET` /
+`LIMIT` for simple queries, and switch to TypeORM's distinct-alias two-query
+strategy when combined with a `*-to-many` join load. `limit(n)` is a raw
+`LIMIT` only — no offset, no pagination rewrites. Use it when you want a
+hard cap on rows without TypeORM touching the query shape.
+
+### `distinct`
+
+```ts
+// SELECT DISTINCT ...
+await UserRepository.qb().distinct().getMany();
+
+// Opt back out on a cloned chain
+await base.distinct(false).getMany();
+```
+
 ### Projection with `select`
 
-After `select(...)` the builder is "projected": `getOne` / `getMany` / `getOneOrFail` are removed at the type level (and throw at runtime) because the resulting rows would be missing entity fields. Use `getRawOne` / `getRawMany` instead:
+After `select(...)` the builder is "projected": `getOne` / `getMany` / `getOneOrFail`
+are removed at the type level (and throw at runtime) because the resulting rows
+would be missing entity fields. Use `getRawOne` / `getRawMany` instead:
 
 ```ts
 const projected = UserRepository.qb().select(['users.name', 'users.age']);
@@ -151,6 +342,26 @@ await UserRepository.qb()
   .update({ age: () => '"age" + :inc' }, { inc: 1 });
 ```
 
+### Deletes
+
+`delete()` runs `DELETE FROM ... WHERE ...` against the matching rows. It
+executes immediately (no `.getMany()` — this is a terminal call) and
+returns the TypeORM `DeleteResult`.
+
+```ts
+await UserRepository.qb().where({ id }).delete();
+await UserRepository.qb().where('users.age < :cutoff', { cutoff: 18 }).delete();
+```
+
+### Inspecting the generated SQL
+
+`getSql()` returns the SQL TypeORM would emit for the current chain — handy
+for debugging or asserting structure in tests without hitting the database.
+
+```ts
+const sql = UserRepository.qb().where({ id }).getSql();
+```
+
 ### Counting and existence
 
 ```ts
@@ -166,6 +377,27 @@ await UserRepository.qb()
   .setLock('pessimistic_write')
   .getOne();
 ```
+
+### Escape hatch: `getRawQueryBuilder`
+
+When you need something our wrapper doesn't cover (custom CTEs, vendor-specific SQL, driver-level
+methods, etc.), drop down to the underlying TypeORM `SelectQueryBuilder`:
+
+```ts
+const raw = UserRepository.qb()
+  .where({ active: true })
+  .getRawQueryBuilder();
+
+raw.addCommonTableExpression(/* ... */).addOrderBy(/* ... */);
+const rows = await raw.getMany();
+```
+
+The returned builder is a clone, so mutating it never leaks back into the wrapper you called it on.
+
+There is intentionally no `forEachRaw` counterpart to `forEach`. With any
+row-multiplying join in the chain, raw-row pagination would cut a single PK's
+joined rows across a `LIMIT` boundary and the cursor would advance past the
+leftover rows, silently skipping data.
 
 ### Immutability
 

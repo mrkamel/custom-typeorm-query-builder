@@ -10,7 +10,9 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  const escape = (name: string) => dataSource.driver.escape(name);
+
   for (const entity of dataSource.entityMetadatas) {
-    await dataSource.query(`TRUNCATE TABLE "${entity.tableName}" CASCADE`);
+    await dataSource.query(`DELETE FROM ${escape(entity.tableName)}`);
   }
 });

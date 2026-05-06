@@ -166,7 +166,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     Object.keys(parameters || {}).forEach((key) => {
       const param = this.incrementParameter();
 
-      newCondition = newCondition.replace(new RegExp(`(?<!:):${key}\\b`, 'g'), `:${param}`);
+      newCondition = newCondition.replace(new RegExp(`(?<!:):(\\.\\.\\.)?${key}\\b`, 'g'), `:$1${param}`);
       newParameters[param] = (parameters || {})[key];
     });
 

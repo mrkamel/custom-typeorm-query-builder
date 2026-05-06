@@ -712,7 +712,7 @@ describe('CustomQueryBuilder', () => {
       await createUser('carol', 50);
 
       const result = await UserRepository.qb()
-        .orderBy('ABS(users.age - :target) ASC', { target: 45 })
+        .orderBy('ABS(users.age - :target) ASC', { target: 42 })
         .getMany();
 
       expect(result.map((user) => user.name)).toEqual(['bob', 'carol', 'alice']);

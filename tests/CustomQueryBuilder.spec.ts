@@ -108,6 +108,19 @@ describe('CustomQueryBuilder', () => {
       expect(sql).toMatch(/age::int/);
     });
 
+    it('rewrites array spread parameters in raw SQL IN (:...names) clauses', async () => {
+      const alice = await createUser('alice', 30);
+      const bob = await createUser('bob', 40);
+      await createUser('carol', 50);
+
+      const result = await UserRepository.qb()
+        .where('users.name IN (:...names)', { names: ['alice', 'bob'] })
+        .where('users.name IN (:...names)', { names: ['alice', 'bob', 'carol'] })
+        .getMany();
+
+      expect(result.map((user) => user.id).sort()).toEqual([alice.id, bob.id].sort());
+    });
+
     it('respects word boundaries so a parameter name is not a prefix of another', async () => {
       const alice = await createUser('alice', 30);
       await createUser('bob', 40);
@@ -699,7 +712,7 @@ describe('CustomQueryBuilder', () => {
       await createUser('carol', 50);
 
       const result = await UserRepository.qb()
-        .orderBy('ABS(users.age - :target) ASC', { target: 45 })
+        .orderBy('ABS(users.age - :target) ASC', { target: 42 })
         .getMany();
 
       expect(result.map((user) => user.name)).toEqual(['bob', 'carol', 'alice']);

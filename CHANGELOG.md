@@ -5,7 +5,7 @@
 ### Breaking changes
 
 - Removed `loadRelationCountAndMap`.
-- Bumped TypeORM dev dependency to `^1.0.0`.
+- Bumped TypeORM dependency to `^1.0.0`.
 
 ### Added
 

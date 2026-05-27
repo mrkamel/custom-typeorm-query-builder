@@ -691,6 +691,10 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this.qb.getExists();
   }
 
+  async getExistsNot() {
+    return !(await this.qb.getExists());
+  }
+
   getRawOne() {
     return this.qb.getRawOne();
   }

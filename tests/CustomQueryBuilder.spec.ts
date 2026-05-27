@@ -1022,6 +1022,15 @@ describe('CustomQueryBuilder', () => {
     });
   });
 
+  describe('getExistsNot', () => {
+    it('returns false if a matching row exists, true otherwise', async () => {
+      await createUser('alice', 30);
+
+      await expect(UserRepository.qb().where({ name: 'alice' }).getExistsNot()).resolves.toBe(false);
+      await expect(UserRepository.qb().where({ name: 'missing' }).getExistsNot()).resolves.toBe(true);
+    });
+  });
+
   describe('getRawOne', () => {
     it('returns a single raw row', async () => {
       await createUser('alice', 30);

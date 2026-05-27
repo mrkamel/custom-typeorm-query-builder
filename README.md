@@ -367,6 +367,7 @@ const sql = UserRepository.qb().where({ id }).getSql();
 ```ts
 await UserRepository.qb().where('users.age >= :min', { min: 18 }).getCount();
 await UserRepository.qb().where({ email }).getExists();
+await UserRepository.qb().where({ email }).getExistsNot();
 ```
 
 ### Locking

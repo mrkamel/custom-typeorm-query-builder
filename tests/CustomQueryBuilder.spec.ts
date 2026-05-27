@@ -15,6 +15,29 @@ async function createUser(name: string, age: number | null = null) {
 }
 
 describe('CustomQueryBuilder', () => {
+  describe('all', () => {
+    it('returns every row clause', async () => {
+      const alice = await createUser('alice', 30);
+      const bob = await createUser('bob', 40);
+
+      const query = UserRepository.qb().all();
+      const result = await query.getMany();
+
+      expect(result.map((user) => user.id).sort()).toEqual([alice.id, bob.id].sort());
+    });
+  });
+
+  describe('none', () => {
+    it('returns no rows', async () => {
+      await createUser('alice', 30);
+      await createUser('bob', 40);
+
+      const result = await UserRepository.qb().none().getMany();
+
+      expect(result).toEqual([]);
+    });
+  });
+
   describe('where', () => {
     it('matches by object equality', async () => {
       const alice = await createUser('alice', 30);
@@ -609,37 +632,6 @@ describe('CustomQueryBuilder', () => {
     });
   });
 
-  describe('loadRelationCountAndMap', () => {
-    it('counts a relation and maps the result onto a property on the root entity', async () => {
-      const alice = await createUser('alice', 30);
-      await PostRepository.save({ title: 'one', user_id: alice.id });
-      await PostRepository.save({ title: 'two', user_id: alice.id });
-
-      const result = await UserRepository.qb()
-        .loadRelationCountAndMap<['posts'], 'postCount'>('users.postCount', 'users.posts')
-        .where({ id: alice.id })
-        .getOne();
-
-      expect(result?.postCount).toBe(2);
-    });
-
-    it('attaches the count to a joined entity (non-root TargetPath)', async () => {
-      const alice = await createUser('alice', 30);
-      const focus = await PostRepository.save({ title: 'focus', user_id: alice.id });
-      await PostRepository.save({ title: 'two', user_id: alice.id });
-      await PostRepository.save({ title: 'three', user_id: alice.id });
-
-      const result = await PostRepository.qb()
-        .leftJoinsAndSelects(['user'])
-        .loadRelationCountAndMap<['user', 'posts'], 'postCount'>('user.postCount', 'user.posts')
-        .where({ id: focus.id })
-        .getOne();
-
-      expect(result?.user?.id).toBe(alice.id);
-      expect(result?.user?.postCount).toBe(3);
-    });
-  });
-
   describe('leftJoin', () => {
     it('joins without selecting the related entity', async () => {
       const alice = await createUser('alice', 30);
@@ -846,6 +838,34 @@ describe('CustomQueryBuilder', () => {
         .getRawMany();
 
       expect(rows).toEqual([{ users_name: 'alice', users_age: 30 }]);
+    });
+
+    it('embeds a scalar subquery as an aliased column when called with (subquery, alias)', async () => {
+      await createUser('alice', 30);
+      await createUser('bob', 40);
+      await createUser('carol', 50);
+
+      const rows = await UserRepository.qb()
+        .select(UserRepository.qb().select(['COUNT(*)']).where('users.age >= :min', { min: 40 }), 'oldCount')
+        .orderBy('users.name', 'ASC')
+        .getRawMany();
+
+      expect(rows.map((row) => Number(row.oldCount))).toEqual([2, 2, 2]);
+    });
+
+    it('does not collide subquery parameter names with the outer query', async () => {
+      await createUser('alice', 30);
+      await createUser('bob', 40);
+      const carol = await createUser('carol', 50);
+
+      const rows = await UserRepository.qb()
+        .where('users.age >= :min', { min: 50 })
+        .select(UserRepository.qb().select(['COUNT(*)']).where('users.age >= :min', { min: 40 }), 'oldCount')
+        .getRawMany();
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0].users_id).toBe(carol.id);
+      expect(Number(rows[0].oldCount)).toBe(2);
     });
   });
 

@@ -33,36 +33,10 @@ type ApplyPathLeft<Entity, Path extends readonly string[]> =
       : Entity
     : Entity;
 
-type AddCountAtPath<Entity, TargetPath extends readonly string[], Prop extends string> =
-  TargetPath extends readonly []
-    ? Entity & { [K in Prop]-?: number }
-    : TargetPath extends readonly [infer Head extends string, ...infer Tail extends readonly string[]]
-      ? Head extends keyof Entity
-        ? Entity & {
-          [K in Head]-?: NonNullable<Entity[Head]> extends (infer U)[]
-            ? AddCountAtPath<NonNullable<U>, Tail, Prop>[]
-            : AddCountAtPath<NonNullable<Entity[Head]>, Tail, Prop>;
-        }
-        : Entity
-      : Entity;
-
 type DottedRelation<Entity, Path extends readonly string[]> =
   Path extends readonly [...infer Chain extends readonly string[], infer Leaf extends string]
     ? Leaf extends keyof ResolveEntity<Entity, Chain> & string
       ? `${string}.${Leaf}`
-      : never
-    : never;
-
-type LeafAlias<TargetPath extends readonly string[]> =
-  TargetPath extends readonly [...readonly string[], infer Last extends string] ? Last : string;
-
-type PathInit<Path extends readonly string[]> =
-  Path extends readonly [...infer Init extends readonly string[], string] ? Init : never;
-
-type CountedRelationPath<Entity, Path extends readonly string[]> =
-  Path extends readonly [...infer Init extends readonly string[], infer Leaf extends string]
-    ? Leaf extends keyof ResolveEntity<Entity, Init> & string
-      ? `${LeafAlias<Init>}.${Leaf}`
       : never
     : never;
 

@@ -515,7 +515,9 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
       return this.clone<Entity, true>().applySelect(selectionOrSubquery);
     }
 
-    return this.clone<Entity, true>().applySubSelect(selectionOrSubquery, alias as string);
+    if (!alias) throw new CustomQueryBuilderError('Alias must be provided when selecting a subquery');
+
+    return this.clone<Entity, true>().applySubSelect(selectionOrSubquery, alias);
   }
 
   getOne() {

@@ -867,6 +867,13 @@ describe('CustomQueryBuilder', () => {
       expect(rows[0].users_id).toBe(carol.id);
       expect(Number(rows[0].oldCount)).toBe(2);
     });
+
+    it('throws when called with a subquery but no alias', () => {
+      const subquery = UserRepository.qb().select(['COUNT(*)']);
+
+      // @ts-expect-error alias is required when first argument is a subquery
+      expect(() => UserRepository.qb().select(subquery)).toThrow(/Alias must be provided/);
+    });
   });
 
   describe('getOneOrFail', () => {

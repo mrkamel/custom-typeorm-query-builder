@@ -244,26 +244,6 @@ const users = await UserRepository.qb().joinsAndSelects(['profile']).getMany();
 users[0].profile.bio; // no optional chaining needed
 ```
 
-### Counting a relation onto a property
-
-```ts
-const user = await UserRepository.qb()
-  .loadRelationCountAndMap<['posts'], 'postCount'>('users.postCount', 'users.posts')
-  .where({ id })
-  .getOne();
-
-user?.postCount; // typed as number
-
-// Attach the count to a joined entity instead of the root:
-const post = await PostRepository.qb()
-  .leftJoinsAndSelects(['user'])
-  .loadRelationCountAndMap<['user', 'posts'], 'postCount'>('user.postCount', 'user.posts')
-  .where({ id })
-  .getOne();
-
-post?.user.postCount; // typed as number on the joined user
-```
-
 ### Sorting, paging, grouping
 
 ```ts
@@ -328,6 +308,18 @@ const projected = UserRepository.qb().select(['users.name', 'users.age']);
 
 await projected.getRawMany(); // ✓
 await projected.getOne();     // ✗ type error + runtime error
+```
+
+`select` also accepts a sub-query plus an alias to embed a scalar sub-query as
+an aliased column:
+
+```ts
+const rows = await UserRepository.qb()
+  .select(
+    UserRepository.qb().select(['COUNT(*)']).where('users.age >= :min', { min: 40 }),
+    'oldCount',
+  )
+  .getRawMany();
 ```
 
 ### Updates

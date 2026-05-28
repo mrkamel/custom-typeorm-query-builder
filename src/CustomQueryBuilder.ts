@@ -497,7 +497,12 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
       rawSubQb.getParameters(),
     );
 
-    this.qb.addSelect(`(${newCondition})`, alias);
+    if (this.config.selects.length > 0) {
+      this.qb.addSelect(`(${newCondition})`, alias);
+    } else {
+      this.qb.select(`(${newCondition})`, alias);
+    }
+
     this.qb.setParameters(newParameters);
 
     this.config.selects.push(alias);
@@ -505,15 +510,15 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this;
   }
 
+  select(selection: string): QueryBuilder<Entity, true>;
   select(selection: string[]): QueryBuilder<Entity, true>;
   select(subquery: QueryBuilder<Entity, boolean>, alias: string): QueryBuilder<Entity, true>;
   select(
-    selectionOrSubquery: string[] | QueryBuilder<Entity, boolean>,
+    selectionOrSubquery: string | string[] | QueryBuilder<Entity, boolean>,
     alias?: string,
   ): QueryBuilder<Entity, true> {
-    if (Array.isArray(selectionOrSubquery)) {
-      return this.clone<Entity, true>().applySelect(selectionOrSubquery);
-    }
+    if (Array.isArray(selectionOrSubquery)) return this.clone<Entity, true>().applySelect(selectionOrSubquery);
+    if (typeof selectionOrSubquery === 'string') return this.clone<Entity, true>().applySelect([selectionOrSubquery]);
 
     if (!alias) throw new CustomQueryBuilderError('Alias must be provided when selecting a subquery');
 

@@ -144,6 +144,19 @@ await UserRepository.qb()
   .getMany();
 ```
 
+### `all()` / `none()`
+
+Convenience builders for code paths that need to express "every row" or "no rows"
+explicitly — handy when the filter is built conditionally:
+
+```ts
+const builder = filters.length > 0
+  ? UserRepository.qb().where({ id: filters })
+  : UserRepository.qb().all();
+
+const blocked = isDryRun ? UserRepository.qb().none() : UserRepository.qb().where({ active: true });
+```
+
 ### Joins
 
 ```ts
@@ -310,13 +323,42 @@ await projected.getRawMany(); // ✓
 await projected.getOne();     // ✗ type error + runtime error
 ```
 
-`select` also accepts a sub-query plus an alias to embed a scalar sub-query as
-an aliased column:
+`select` accepts a single column string, an array of columns, or a sub-query
+plus an alias. Repeated calls append to the running selection list:
 
 ```ts
-const rows = await UserRepository.qb()
+// Single column
+await UserRepository.qb().select('users.name').getRawMany();
+
+// Multiple columns
+await UserRepository.qb().select(['users.name', 'users.age']).getRawMany();
+
+// Appending across calls
+await UserRepository.qb()
+  .select('users.name')
+  .select('users.age')
+  .getRawMany();
+```
+
+A sub-query plus an alias embeds a scalar sub-query as an aliased column. When
+it is the *first* select on the chain it replaces the default entity selection,
+so the row contains only the aliased column. Chain an explicit `select(...)`
+beforehand if you want to keep entity columns alongside it:
+
+```ts
+// Only the `oldCount` column comes back
+await UserRepository.qb()
   .select(
-    UserRepository.qb().select(['COUNT(*)']).where('users.age >= :min', { min: 40 }),
+    UserRepository.qb().select('COUNT(*)').where('users.age >= :min', { min: 40 }),
+    'oldCount',
+  )
+  .getRawMany();
+
+// Keep `users.id` alongside the sub-query column
+await UserRepository.qb()
+  .select('users.id')
+  .select(
+    UserRepository.qb().select('COUNT(*)').where('users.age >= :min', { min: 40 }),
     'oldCount',
   )
   .getRawMany();

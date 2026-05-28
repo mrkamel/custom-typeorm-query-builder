@@ -180,7 +180,7 @@ describe('CustomQueryBuilder', () => {
 
       const onlyAlice = base.where({ name: 'alice' });
       const onlyWithProfile = base.where('profile.bio IS NOT NULL');
-      const projected = base.select(['users.name']);
+      const projected = base.select('users.name');
 
       const aliceResult = await onlyAlice.getMany();
       const profileResult = await onlyWithProfile.getMany();
@@ -804,7 +804,7 @@ describe('CustomQueryBuilder', () => {
     it('returns raw rows and forbids getOne after select at the type level', async () => {
       await createUser('alice', 30);
 
-      const projected = UserRepository.qb().select(['users.name']);
+      const projected = UserRepository.qb().select('users.name');
 
       // @ts-expect-error getOne is removed after select
       void projected.getOne;
@@ -821,7 +821,7 @@ describe('CustomQueryBuilder', () => {
     it('throws at runtime if entity getters are reached after select', async () => {
       await createUser('alice', 30);
 
-      const projected = UserRepository.qb().select(['users.name']);
+      const projected = UserRepository.qb().select('users.name');
       const escapeHatch = projected as unknown as { getOne(): Promise<unknown>, getMany(): Promise<unknown>, getOneOrFail(): Promise<unknown> };
 
       expect(() => escapeHatch.getOne()).toThrow(/getOne cannot be used after select/);
@@ -833,8 +833,8 @@ describe('CustomQueryBuilder', () => {
       await createUser('alice', 30);
 
       const rows = await UserRepository.qb()
-        .select(['users.name'])
-        .select(['users.age'])
+        .select('users.name')
+        .select('users.age')
         .getRawMany();
 
       expect(rows).toEqual([{ users_name: 'alice', users_age: 30 }]);
@@ -846,7 +846,7 @@ describe('CustomQueryBuilder', () => {
       await createUser('carol', 50);
 
       const rows = await UserRepository.qb()
-        .select(UserRepository.qb().select(['COUNT(*)']).where('users.age >= :min', { min: 40 }), 'oldCount')
+        .select(UserRepository.qb().select('COUNT(*)').where('users.age >= :min', { min: 40 }), 'oldCount')
         .orderBy('users.name', 'ASC')
         .getRawMany();
 
@@ -860,7 +860,8 @@ describe('CustomQueryBuilder', () => {
 
       const rows = await UserRepository.qb()
         .where('users.age >= :min', { min: 50 })
-        .select(UserRepository.qb().select(['COUNT(*)']).where('users.age >= :min', { min: 40 }), 'oldCount')
+        .select('users.id')
+        .select(UserRepository.qb().select('COUNT(*)').where('users.age >= :min', { min: 40 }), 'oldCount')
         .getRawMany();
 
       expect(rows).toHaveLength(1);
@@ -869,10 +870,64 @@ describe('CustomQueryBuilder', () => {
     });
 
     it('throws when called with a subquery but no alias', () => {
-      const subquery = UserRepository.qb().select(['COUNT(*)']);
+      const subquery = UserRepository.qb().select('COUNT(*)');
 
       // @ts-expect-error alias is required when first argument is a subquery
       expect(() => UserRepository.qb().select(subquery)).toThrow(/Alias must be provided/);
+    });
+
+    it('accepts a single string selection', async () => {
+      await createUser('alice', 30);
+
+      const projected = UserRepository.qb().select('users.name');
+
+      // @ts-expect-error getOne is removed after select
+      void projected.getOne;
+
+      const rows = await projected.getRawMany();
+
+      expect(rows).toEqual([{ users_name: 'alice' }]);
+    });
+
+    it('appends a single string selection to a prior select call', async () => {
+      await createUser('alice', 30);
+
+      const rows = await UserRepository.qb()
+        .select('users.name')
+        .select('users.age')
+        .getRawMany();
+
+      expect(rows).toEqual([{ users_name: 'alice', users_age: 30 }]);
+    });
+
+    it('replaces the default entity selection when a subquery is the first select', async () => {
+      await createUser('alice', 30);
+
+      const projected = UserRepository.qb()
+        .select(UserRepository.qb().select('COUNT(*)').where('users.age >= :min', { min: 40 }), 'oldCount');
+
+      const sql = projected.getSql();
+
+      expect(sql).not.toMatch(/users\./);
+
+      const rows = await projected.getRawMany();
+
+      expect(rows).toHaveLength(1);
+      expect(Object.keys(rows[0])).toEqual(['oldCount']);
+    });
+
+    it('appends a subquery alongside a prior explicit selection', async () => {
+      await createUser('alice', 30);
+      await createUser('bob', 40);
+
+      const rows = await UserRepository.qb()
+        .select('users.name')
+        .select(UserRepository.qb().select('COUNT(*)').where('users.age >= :min', { min: 40 }), 'oldCount')
+        .orderBy('users.name', 'ASC')
+        .getRawMany();
+
+      expect(rows.map((row) => row.users_name)).toEqual(['alice', 'bob']);
+      expect(rows.map((row) => Number(row.oldCount))).toEqual([1, 1]);
     });
   });
 
@@ -1027,7 +1082,7 @@ describe('CustomQueryBuilder', () => {
     });
 
     it('throws after select (projection)', async () => {
-      const projected = UserRepository.qb().select(['users.name']);
+      const projected = UserRepository.qb().select('users.name');
 
       // @ts-expect-error forEach is removed at the type level after select
       void projected.forEach;
@@ -1062,7 +1117,7 @@ describe('CustomQueryBuilder', () => {
     it('returns a single raw row', async () => {
       await createUser('alice', 30);
 
-      const row = await UserRepository.qb().select(['users.name']).getRawOne();
+      const row = await UserRepository.qb().select('users.name').getRawOne();
 
       expect(row).toEqual({ users_name: 'alice' });
     });

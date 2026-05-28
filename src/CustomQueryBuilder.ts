@@ -33,36 +33,10 @@ type ApplyPathLeft<Entity, Path extends readonly string[]> =
       : Entity
     : Entity;
 
-type AddCountAtPath<Entity, TargetPath extends readonly string[], Prop extends string> =
-  TargetPath extends readonly []
-    ? Entity & { [K in Prop]-?: number }
-    : TargetPath extends readonly [infer Head extends string, ...infer Tail extends readonly string[]]
-      ? Head extends keyof Entity
-        ? Entity & {
-          [K in Head]-?: NonNullable<Entity[Head]> extends (infer U)[]
-            ? AddCountAtPath<NonNullable<U>, Tail, Prop>[]
-            : AddCountAtPath<NonNullable<Entity[Head]>, Tail, Prop>;
-        }
-        : Entity
-      : Entity;
-
 type DottedRelation<Entity, Path extends readonly string[]> =
   Path extends readonly [...infer Chain extends readonly string[], infer Leaf extends string]
     ? Leaf extends keyof ResolveEntity<Entity, Chain> & string
       ? `${string}.${Leaf}`
-      : never
-    : never;
-
-type LeafAlias<TargetPath extends readonly string[]> =
-  TargetPath extends readonly [...readonly string[], infer Last extends string] ? Last : string;
-
-type PathInit<Path extends readonly string[]> =
-  Path extends readonly [...infer Init extends readonly string[], string] ? Init : never;
-
-type CountedRelationPath<Entity, Path extends readonly string[]> =
-  Path extends readonly [...infer Init extends readonly string[], infer Leaf extends string]
-    ? Leaf extends keyof ResolveEntity<Entity, Init> & string
-      ? `${LeafAlias<Init>}.${Leaf}`
       : never
     : never;
 
@@ -156,7 +130,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
   }
 
   private incrementParameter() {
-    return `_param${this.config.parameterCount++}`;
+    return `__param${this.config.parameterCount++}`;
   }
 
   private rewriteParameters(condition: string, parameters: ObjectLiteral) {
@@ -189,6 +163,14 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     };
 
     return res;
+  }
+
+  all() {
+    return this.where({});
+  }
+
+  none() {
+    return this.where('1 = 0');
   }
 
   private applyWhere(conditions: string | WhereObjectConditions<Entity>, parameters?: ObjectLiteral) {
@@ -423,37 +405,6 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     });
   }
 
-  private applyLoadRelationCountAndMap(
-    mapTo: string,
-    relationPath: string,
-    alias?: string,
-    condition?: string,
-    parameters?: ObjectLiteral,
-  ) {
-    if (condition) {
-      const { newCondition, newParameters } = this.rewriteParameters(condition, parameters || {});
-
-      this.qb.loadRelationCountAndMap(mapTo, relationPath, alias, (subQb) => subQb.andWhere(`(${newCondition})`, newParameters));
-    } else {
-      this.qb.loadRelationCountAndMap(mapTo, relationPath, alias);
-    }
-
-    return this;
-  }
-
-  loadRelationCountAndMap<
-    const Path extends readonly [...readonly string[], string],
-    const MapToProperty extends string,
-  >(
-    mapTo: `${LeafAlias<PathInit<Path>>}.${MapToProperty}`,
-    relationPath: CountedRelationPath<Entity, Path>,
-    alias?: string,
-    condition?: string,
-    parameters?: ObjectLiteral,
-  ): QueryBuilder<AddCountAtPath<Entity, PathInit<Path>, MapToProperty>, Projected> {
-    return this.clone<AddCountAtPath<Entity, PathInit<Path>, MapToProperty>>().applyLoadRelationCountAndMap(mapTo, relationPath, alias, condition, parameters);
-  }
-
   private applyOrderBy(
     sort: string | { [Key in keyof Entity]?: 'ASC' | 'DESC' },
     orderOrParameters?: 'ASC' | 'DESC' | ObjectLiteral,
@@ -538,8 +489,40 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this;
   }
 
-  select(selection: string[]): QueryBuilder<Entity, true> {
-    return this.clone<Entity, true>().applySelect(selection);
+  private applySubSelect(subquery: QueryBuilder<Entity, boolean>, alias: string) {
+    const rawSubQb = subquery.getRawQueryBuilder();
+
+    const { newCondition, newParameters } = this.rewriteParameters(
+      rawSubQb.getQuery(),
+      rawSubQb.getParameters(),
+    );
+
+    if (this.config.selects.length > 0) {
+      this.qb.addSelect(`(${newCondition})`, alias);
+    } else {
+      this.qb.select(`(${newCondition})`, alias);
+    }
+
+    this.qb.setParameters(newParameters);
+
+    this.config.selects.push(alias);
+
+    return this;
+  }
+
+  select(selection: string): QueryBuilder<Entity, true>;
+  select(selection: string[]): QueryBuilder<Entity, true>;
+  select(subquery: QueryBuilder<Entity, boolean>, alias: string): QueryBuilder<Entity, true>;
+  select(
+    selectionOrSubquery: string | string[] | QueryBuilder<Entity, boolean>,
+    alias?: string,
+  ): QueryBuilder<Entity, true> {
+    if (Array.isArray(selectionOrSubquery)) return this.clone<Entity, true>().applySelect(selectionOrSubquery);
+    if (typeof selectionOrSubquery === 'string') return this.clone<Entity, true>().applySelect([selectionOrSubquery]);
+
+    if (!alias) throw new CustomQueryBuilderError('Alias must be provided when selecting a subquery');
+
+    return this.clone<Entity, true>().applySubSelect(selectionOrSubquery, alias);
   }
 
   getOne() {

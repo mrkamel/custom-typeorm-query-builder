@@ -15,6 +15,29 @@ async function createUser(name: string, age: number | null = null) {
 }
 
 describe('CustomQueryBuilder', () => {
+  describe('all', () => {
+    it('returns every row clause', async () => {
+      const alice = await createUser('alice', 30);
+      const bob = await createUser('bob', 40);
+
+      const query = UserRepository.qb().all();
+      const result = await query.getMany();
+
+      expect(result.map((user) => user.id).sort()).toEqual([alice.id, bob.id].sort());
+    });
+  });
+
+  describe('none', () => {
+    it('returns no rows', async () => {
+      await createUser('alice', 30);
+      await createUser('bob', 40);
+
+      const result = await UserRepository.qb().none().getMany();
+
+      expect(result).toEqual([]);
+    });
+  });
+
   describe('where', () => {
     it('matches by object equality', async () => {
       const alice = await createUser('alice', 30);
@@ -157,7 +180,7 @@ describe('CustomQueryBuilder', () => {
 
       const onlyAlice = base.where({ name: 'alice' });
       const onlyWithProfile = base.where('profile.bio IS NOT NULL');
-      const projected = base.select(['users.name']);
+      const projected = base.select('users.name');
 
       const aliceResult = await onlyAlice.getMany();
       const profileResult = await onlyWithProfile.getMany();
@@ -609,37 +632,6 @@ describe('CustomQueryBuilder', () => {
     });
   });
 
-  describe('loadRelationCountAndMap', () => {
-    it('counts a relation and maps the result onto a property on the root entity', async () => {
-      const alice = await createUser('alice', 30);
-      await PostRepository.save({ title: 'one', user_id: alice.id });
-      await PostRepository.save({ title: 'two', user_id: alice.id });
-
-      const result = await UserRepository.qb()
-        .loadRelationCountAndMap<['posts'], 'postCount'>('users.postCount', 'users.posts')
-        .where({ id: alice.id })
-        .getOne();
-
-      expect(result?.postCount).toBe(2);
-    });
-
-    it('attaches the count to a joined entity (non-root TargetPath)', async () => {
-      const alice = await createUser('alice', 30);
-      const focus = await PostRepository.save({ title: 'focus', user_id: alice.id });
-      await PostRepository.save({ title: 'two', user_id: alice.id });
-      await PostRepository.save({ title: 'three', user_id: alice.id });
-
-      const result = await PostRepository.qb()
-        .leftJoinsAndSelects(['user'])
-        .loadRelationCountAndMap<['user', 'posts'], 'postCount'>('user.postCount', 'user.posts')
-        .where({ id: focus.id })
-        .getOne();
-
-      expect(result?.user?.id).toBe(alice.id);
-      expect(result?.user?.postCount).toBe(3);
-    });
-  });
-
   describe('leftJoin', () => {
     it('joins without selecting the related entity', async () => {
       const alice = await createUser('alice', 30);
@@ -812,7 +804,7 @@ describe('CustomQueryBuilder', () => {
     it('returns raw rows and forbids getOne after select at the type level', async () => {
       await createUser('alice', 30);
 
-      const projected = UserRepository.qb().select(['users.name']);
+      const projected = UserRepository.qb().select('users.name');
 
       // @ts-expect-error getOne is removed after select
       void projected.getOne;
@@ -829,7 +821,7 @@ describe('CustomQueryBuilder', () => {
     it('throws at runtime if entity getters are reached after select', async () => {
       await createUser('alice', 30);
 
-      const projected = UserRepository.qb().select(['users.name']);
+      const projected = UserRepository.qb().select('users.name');
       const escapeHatch = projected as unknown as { getOne(): Promise<unknown>, getMany(): Promise<unknown>, getOneOrFail(): Promise<unknown> };
 
       expect(() => escapeHatch.getOne()).toThrow(/getOne cannot be used after select/);
@@ -841,11 +833,101 @@ describe('CustomQueryBuilder', () => {
       await createUser('alice', 30);
 
       const rows = await UserRepository.qb()
-        .select(['users.name'])
-        .select(['users.age'])
+        .select('users.name')
+        .select('users.age')
         .getRawMany();
 
       expect(rows).toEqual([{ users_name: 'alice', users_age: 30 }]);
+    });
+
+    it('embeds a scalar subquery as an aliased column when called with (subquery, alias)', async () => {
+      await createUser('alice', 30);
+      await createUser('bob', 40);
+      await createUser('carol', 50);
+
+      const rows = await UserRepository.qb()
+        .select(UserRepository.qb().select('COUNT(*)').where('users.age >= :min', { min: 40 }), 'oldCount')
+        .orderBy('users.name', 'ASC')
+        .getRawMany();
+
+      expect(rows.map((row) => Number(row.oldCount))).toEqual([2, 2, 2]);
+    });
+
+    it('does not collide subquery parameter names with the outer query', async () => {
+      await createUser('alice', 30);
+      await createUser('bob', 40);
+      const carol = await createUser('carol', 50);
+
+      const rows = await UserRepository.qb()
+        .where('users.age >= :min', { min: 50 })
+        .select('users.id')
+        .select(UserRepository.qb().select('COUNT(*)').where('users.age >= :min', { min: 40 }), 'oldCount')
+        .getRawMany();
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0].users_id).toBe(carol.id);
+      expect(Number(rows[0].oldCount)).toBe(2);
+    });
+
+    it('throws when called with a subquery but no alias', () => {
+      const subquery = UserRepository.qb().select('COUNT(*)');
+
+      // @ts-expect-error alias is required when first argument is a subquery
+      expect(() => UserRepository.qb().select(subquery)).toThrow(/Alias must be provided/);
+    });
+
+    it('accepts a single string selection', async () => {
+      await createUser('alice', 30);
+
+      const projected = UserRepository.qb().select('users.name');
+
+      // @ts-expect-error getOne is removed after select
+      void projected.getOne;
+
+      const rows = await projected.getRawMany();
+
+      expect(rows).toEqual([{ users_name: 'alice' }]);
+    });
+
+    it('appends a single string selection to a prior select call', async () => {
+      await createUser('alice', 30);
+
+      const rows = await UserRepository.qb()
+        .select('users.name')
+        .select('users.age')
+        .getRawMany();
+
+      expect(rows).toEqual([{ users_name: 'alice', users_age: 30 }]);
+    });
+
+    it('replaces the default entity selection when a subquery is the first select', async () => {
+      await createUser('alice', 30);
+
+      const projected = UserRepository.qb()
+        .select(UserRepository.qb().select('COUNT(*)').where('users.age >= :min', { min: 40 }), 'oldCount');
+
+      const sql = projected.getSql();
+
+      expect(sql).not.toMatch(/users\./);
+
+      const rows = await projected.getRawMany();
+
+      expect(rows).toHaveLength(1);
+      expect(Object.keys(rows[0])).toEqual(['oldCount']);
+    });
+
+    it('appends a subquery alongside a prior explicit selection', async () => {
+      await createUser('alice', 30);
+      await createUser('bob', 40);
+
+      const rows = await UserRepository.qb()
+        .select('users.name')
+        .select(UserRepository.qb().select('COUNT(*)').where('users.age >= :min', { min: 40 }), 'oldCount')
+        .orderBy('users.name', 'ASC')
+        .getRawMany();
+
+      expect(rows.map((row) => row.users_name)).toEqual(['alice', 'bob']);
+      expect(rows.map((row) => Number(row.oldCount))).toEqual([1, 1]);
     });
   });
 
@@ -1000,7 +1082,7 @@ describe('CustomQueryBuilder', () => {
     });
 
     it('throws after select (projection)', async () => {
-      const projected = UserRepository.qb().select(['users.name']);
+      const projected = UserRepository.qb().select('users.name');
 
       // @ts-expect-error forEach is removed at the type level after select
       void projected.forEach;
@@ -1035,7 +1117,7 @@ describe('CustomQueryBuilder', () => {
     it('returns a single raw row', async () => {
       await createUser('alice', 30);
 
-      const row = await UserRepository.qb().select(['users.name']).getRawOne();
+      const row = await UserRepository.qb().select('users.name').getRawOne();
 
       expect(row).toEqual({ users_name: 'alice' });
     });

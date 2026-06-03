@@ -1,5 +1,6 @@
 import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { UserEntity } from './UserEntity';
+import type { Relation } from '../../src';
 
 @Entity('posts')
 export class PostEntity {
@@ -14,7 +15,7 @@ export class PostEntity {
 
   @ManyToOne(() => UserEntity, (user) => user.posts, { createForeignKeyConstraints: false })
   @JoinColumn({ name: 'user_id' })
-  user?: UserEntity;
+  user?: Relation<UserEntity>;
 
   @Column({ type: 'uuid' })
   user_id!: string;

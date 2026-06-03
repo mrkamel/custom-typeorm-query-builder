@@ -2,7 +2,21 @@ import type { ObjectLiteral, Repository, EntityMetadata } from 'typeorm';
 
 export class CustomQueryBuilderError extends Error {}
 
-type UnwrapRelation<T> = NonNullable<T> extends (infer U)[] ? U : NonNullable<T>;
+declare const relationBrand: unique symbol;
+
+export type Relation<T> = {
+  readonly [relationBrand]: T;
+};
+
+type LoadedRelation<T> =
+  T extends { readonly [relationBrand]: infer U }
+    ? Exclude<U, undefined>
+    : Exclude<T, undefined>;
+
+type UnwrapRelation<T> =
+  NonNullable<LoadedRelation<T>> extends (infer U)[]
+    ? U
+    : NonNullable<LoadedRelation<T>>;
 
 type ResolveEntity<Entity, Chain extends readonly string[]> =
   Chain extends readonly [infer Head extends string, ...infer Tail extends readonly string[]]
@@ -11,13 +25,23 @@ type ResolveEntity<Entity, Chain extends readonly string[]> =
       : never
     : Entity;
 
+type KeysInItem<Item> =
+  Item extends string ? Item
+  : Item extends Record<string, unknown> ? Extract<keyof Item, string>
+  : never;
+
+type KeysInSpec<Spec> =
+  Spec extends readonly (infer Item)[] ? KeysInItem<Item>
+  : Spec extends Record<string, unknown> ? Extract<keyof Spec, string>
+  : never;
+
 type ApplyPathInner<Entity, Path extends readonly string[]> =
   Path extends readonly [infer Head extends string, ...infer Tail extends readonly string[]]
     ? Head extends keyof Entity
-      ? Entity & {
-        [K in Head]-?: NonNullable<Entity[Head]> extends (infer U)[]
-          ? ApplyPathInner<NonNullable<U>, Tail>[]
-          : ApplyPathInner<NonNullable<Entity[Head]>, Tail>;
+      ? Omit<Entity, Head> & {
+        [K in Head]: NonNullable<LoadedRelation<Entity[Head]>> extends (infer U)[]
+          ? ApplyPathInner<U, Tail>[]
+          : ApplyPathInner<NonNullable<LoadedRelation<Entity[Head]>>, Tail>;
       }
       : Entity
     : Entity;
@@ -25,10 +49,10 @@ type ApplyPathInner<Entity, Path extends readonly string[]> =
 type ApplyPathLeft<Entity, Path extends readonly string[]> =
   Path extends readonly [infer Head extends string, ...infer Tail extends readonly string[]]
     ? Head extends keyof Entity
-      ? Entity & {
-        [K in Head]-?: NonNullable<Entity[Head]> extends (infer U)[]
-          ? ApplyPathLeft<NonNullable<U>, Tail>[]
-          : ApplyPathLeft<NonNullable<Entity[Head]>, Tail> | Extract<Entity[Head], null>;
+      ? Omit<Entity, Head> & {
+        [K in Head]: NonNullable<LoadedRelation<Entity[Head]>> extends (infer U)[]
+          ? ApplyPathLeft<U, Tail>[]
+          : ApplyPathLeft<NonNullable<LoadedRelation<Entity[Head]>>, Tail> | Extract<LoadedRelation<Entity[Head]>, null>;
       }
       : Entity
     : Entity;
@@ -44,12 +68,20 @@ type Scalar = string | number | boolean;
 
 type WhereObjectConditions<Entity> = {
   [K in keyof Entity]?:
-    NonNullable<Entity[K]> extends readonly unknown[]
+    NonNullable<Entity[K]> extends Relation<unknown>
       ? never
-      : NonNullable<Entity[K]> extends Scalar
-        ? Entity[K] | NonNullable<Entity[K]>[]
-        : Scalar | Scalar[] | (null extends Entity[K] ? null : never);
+      : NonNullable<Entity[K]> extends readonly unknown[]
+        ? never
+        : NonNullable<Entity[K]> extends Scalar
+          ? Entity[K] | NonNullable<Entity[K]>[]
+          : Scalar | Scalar[] | (null extends Entity[K] ? null : never);
 };
+
+// The RelationKey generic type gates the allowed keys being passed to
+// `leftJoinsAndSelects` / `joinsAndSelects` / `joins` / `leftJoins`.
+// It's best-effort: it picks any non-Date object field. Date is carved
+// out because timestamp columns are the most common false positive, but
+// other transformer-wrapped classes and jsonb objects still slip through.
 
 type RelationKey<Entity> = {
   [K in keyof Entity]-?: NonNullable<Entity[K]> extends Date
@@ -71,44 +103,44 @@ type JoinSpec<Entity> =
   | { [K in RelationKey<Entity>]?: JoinSpec<UnwrapRelation<Entity[K]>> };
 
 type ApplyLeftJoinsAndSelectsNested<Value, NestedSpec> =
-  NonNullable<Value> extends (infer U)[]
-    ? ApplyLeftJoinsAndSelects<NonNullable<U>, NestedSpec>[]
-    : ApplyLeftJoinsAndSelects<NonNullable<Value>, NestedSpec> | Extract<Value, null>;
+  NonNullable<LoadedRelation<Value>> extends (infer U)[]
+    ? ApplyLeftJoinsAndSelects<U, NestedSpec>[]
+    : ApplyLeftJoinsAndSelects<NonNullable<LoadedRelation<Value>>, NestedSpec> | Extract<LoadedRelation<Value>, null>;
 
 type ApplyLeftJoinsAndSelectsArrayItem<Entity, Item> =
   Item extends keyof Entity
-    ? { [P in Item]-?: Exclude<Entity[P], undefined> }
+    ? { [P in Item]: LoadedRelation<Entity[P]> }
     : Item extends Record<string, unknown>
-      ? { [K in Extract<keyof Item, keyof Entity>]-?: ApplyLeftJoinsAndSelectsNested<Entity[K], Item[K]> }
+      ? { [K in Extract<keyof Item, keyof Entity>]: ApplyLeftJoinsAndSelectsNested<Entity[K], Item[K]> }
       : never;
 
 type ApplyLeftJoinsAndSelects<Entity, Spec> =
   Spec extends readonly (infer Item)[]
-    ? Entity & UnionToIntersection<ApplyLeftJoinsAndSelectsArrayItem<Entity, Item>>
+    ? Omit<Entity, KeysInSpec<Spec>> & UnionToIntersection<ApplyLeftJoinsAndSelectsArrayItem<Entity, Item>>
     : Spec extends Record<string, unknown>
-      ? Entity & {
-        [K in Extract<keyof Spec, keyof Entity>]-?: ApplyLeftJoinsAndSelectsNested<Entity[K], Spec[K]>;
+      ? Omit<Entity, KeysInSpec<Spec>> & {
+        [K in Extract<keyof Spec, keyof Entity>]: ApplyLeftJoinsAndSelectsNested<Entity[K], Spec[K]>;
       }
       : Entity;
 
 type ApplyJoinsAndSelectsNested<Value, NestedSpec> =
-  NonNullable<Value> extends (infer U)[]
-    ? ApplyJoinsAndSelects<NonNullable<U>, NestedSpec>[]
-    : ApplyJoinsAndSelects<NonNullable<Value>, NestedSpec>;
+  NonNullable<LoadedRelation<Value>> extends (infer U)[]
+    ? ApplyJoinsAndSelects<U, NestedSpec>[]
+    : ApplyJoinsAndSelects<NonNullable<LoadedRelation<Value>>, NestedSpec>;
 
 type ApplyJoinsAndSelectsArrayItem<Entity, Item> =
   Item extends keyof Entity
-    ? { [P in Item]-?: NonNullable<Entity[P]> extends (infer U)[] ? NonNullable<U>[] : NonNullable<Entity[P]> }
+    ? { [P in Item]: NonNullable<LoadedRelation<Entity[P]>> }
     : Item extends Record<string, unknown>
-      ? { [K in Extract<keyof Item, keyof Entity>]-?: ApplyJoinsAndSelectsNested<Entity[K], Item[K]> }
+      ? { [K in Extract<keyof Item, keyof Entity>]: ApplyJoinsAndSelectsNested<Entity[K], Item[K]> }
       : never;
 
 type ApplyJoinsAndSelects<Entity, Spec> =
   Spec extends readonly (infer Item)[]
-    ? Entity & UnionToIntersection<ApplyJoinsAndSelectsArrayItem<Entity, Item>>
+    ? Omit<Entity, KeysInSpec<Spec>> & UnionToIntersection<ApplyJoinsAndSelectsArrayItem<Entity, Item>>
     : Spec extends Record<string, unknown>
-      ? Entity & {
-        [K in Extract<keyof Spec, keyof Entity>]-?: ApplyJoinsAndSelectsNested<Entity[K], Spec[K]>;
+      ? Omit<Entity, KeysInSpec<Spec>> & {
+        [K in Extract<keyof Spec, keyof Entity>]: ApplyJoinsAndSelectsNested<Entity[K], Spec[K]>;
       }
       : Entity;
 

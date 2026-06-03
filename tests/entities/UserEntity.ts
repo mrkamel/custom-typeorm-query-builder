@@ -1,6 +1,7 @@
 import { Column, Entity, OneToMany, OneToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { ProfileEntity } from './ProfileEntity';
 import { PostEntity } from './PostEntity';
+import type { Relation } from '../../src';
 
 @Entity('users')
 export class UserEntity {
@@ -14,8 +15,8 @@ export class UserEntity {
   age!: number | null;
 
   @OneToOne(() => ProfileEntity, (profile) => profile.user)
-  profile?: ProfileEntity | null;
+  profile?: Relation<ProfileEntity | null>;
 
   @OneToMany(() => PostEntity, (post) => post.user)
-  posts?: PostEntity[];
+  posts?: Relation<PostEntity[]>;
 }

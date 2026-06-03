@@ -1,5 +1,6 @@
 import { Column, Entity, JoinColumn, OneToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { UserEntity } from './UserEntity';
+import type { Relation } from '../../src';
 
 @Entity('profiles')
 export class ProfileEntity {
@@ -11,7 +12,7 @@ export class ProfileEntity {
 
   @OneToOne(() => UserEntity, (user) => user.profile, { createForeignKeyConstraints: false })
   @JoinColumn({ name: 'user_id' })
-  user?: UserEntity;
+  user?: Relation<UserEntity>;
 
   @Column({ type: 'uuid' })
   user_id!: string;

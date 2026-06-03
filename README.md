@@ -157,6 +157,62 @@ const builder = filters.length > 0
 const blocked = isDryRun ? UserRepository.qb().none() : UserRepository.qb().where({ active: true });
 ```
 
+### Type-safe relation loading with `Relation<T>`
+
+Wrap relation fields in `Relation<T>` and accessing them without a join becomes
+a TypeScript error. The brand is opt-in — entities that don't use it keep
+working as before.
+
+```ts
+import type { Relation } from 'custom-typeorm-query-builder';
+
+@Entity('users')
+export class UserEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id!: string;
+
+  @OneToOne(() => ProfileEntity, (profile) => profile.user)
+  profile?: Relation<ProfileEntity | null>;
+
+  @OneToMany(() => PostEntity, (post) => post.user)
+  posts?: Relation<PostEntity[]>;
+}
+```
+
+Without a join, the field carries the brand only — property access errors:
+
+```ts
+const user = await UserRepository.qb().getOne();
+user?.profile.bio; // ✗ Property 'bio' does not exist on Relation<...>
+```
+
+After a join the field is unwrapped to its loaded type:
+
+```ts
+const user = await UserRepository.qb()
+  .leftJoinsAndSelects(['profile'])
+  .getOne();
+user?.profile?.bio; // ✓ profile is ProfileEntity | null
+```
+
+Inner relations of a joined entity stay branded — they need their own join:
+
+```ts
+const post = await PostRepository.qb()
+  .leftJoinsAndSelects(['user'])     // unwraps user
+  .getOne();
+post?.user?.profile.bio;             // ✗ user.profile still branded
+
+const post2 = await PostRepository.qb()
+  .leftJoinsAndSelects({ user: ['profile'] })  // unwraps user and user.profile
+  .getOne();
+post2?.user?.profile?.bio;           // ✓
+```
+
+Inner-join variants (`innerJoinAndSelect`, `joinsAndSelects`, `joins`)
+additionally strip `null` from the loaded type, since `INNER JOIN` drops
+unmatched rows.
+
 ### Joins
 
 ```ts

@@ -112,6 +112,9 @@ type ApplyJoinsAndSelects<Entity, Spec> =
       }
       : Entity;
 
+export type LeftJoinsAndSelects<Entity, Spec extends JoinSpec<Entity>> = ApplyLeftJoinsAndSelects<Entity, Spec>;
+export type JoinsAndSelects<Entity, Spec extends JoinSpec<Entity>> = ApplyJoinsAndSelects<Entity, Spec>;
+
 type QueryBuilder<Entity extends ObjectLiteral, Projected extends boolean = false> =
   Omit<CustomQueryBuilder<Entity, Projected>, Projected extends true ? 'getOne' | 'getMany' | 'getOneOrFail' | 'forEach' : never>;
 

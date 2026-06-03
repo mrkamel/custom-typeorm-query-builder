@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0
+
+### Added
+
+- Exported utility types `LeftJoinsAndSelects<Entity, Spec>` and `JoinsAndSelects<Entity, Spec>` for annotating return types of functions that hydrate relations via `leftJoinsAndSelects()` / `joinsAndSelects()`.
+
 ## 0.4.0
 
 ### Breaking changes

@@ -257,6 +257,32 @@ const users = await UserRepository.qb().joinsAndSelects(['profile']).getMany();
 users[0].profile.bio; // no optional chaining needed
 ```
 
+### Naming a hydrated shape (`LeftJoinsAndSelects` / `JoinsAndSelects`)
+
+When a function returns rows that have been hydrated by `leftJoinsAndSelects()` or
+`joinsAndSelects()`, the inferred return type can be unwieldy to spell out. The
+exported utility types `LeftJoinsAndSelects<Entity, Spec>` and
+`JoinsAndSelects<Entity, Spec>` reuse the same nested-spec form to compute the
+loaded entity shape, so you can annotate function signatures without copying the
+inference by hand. Same nullability rules as the builders:
+
+- `LeftJoinsAndSelects` — relations stay nullable (LEFT JOIN)
+- `JoinsAndSelects` — relations become non-null (INNER JOIN)
+
+```ts
+import type { LeftJoinsAndSelects, JoinsAndSelects } from 'custom-typeorm-query-builder';
+
+type UserWithProfile = LeftJoinsAndSelects<UserEntity, ['profile']>;
+type PostWithUserAndProfile = JoinsAndSelects<PostEntity, { user: ['profile'] }>;
+
+async function loadUser(id: string): Promise<UserWithProfile | null> {
+  return UserRepository.qb().leftJoinsAndSelects(['profile']).where({ id }).getOne();
+}
+```
+
+The `Spec` parameter is the same array/object form the builders accept, and
+unknown keys or scalar columns are rejected at the type level.
+
 ### Sorting, paging, grouping
 
 ```ts

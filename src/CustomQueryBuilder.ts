@@ -554,7 +554,13 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this.qb.getManyAndCount();
   }
 
-  async *forEach(options: { batchSize?: number } = {}): AsyncGenerator<Entity, void, undefined> {
+  forEach(options: { batchSize?: number } = {}): AsyncIterable<Entity, void, undefined> {
+    return {
+      [Symbol.asyncIterator]: (): AsyncIterator<Entity, void, undefined> => this.iterateBatches(options),
+    };
+  }
+
+  private async *iterateBatches(options: { batchSize?: number }): AsyncGenerator<Entity, void, undefined> {
     if (this.config.selects.length > 0) throw new CustomQueryBuilderError('forEach cannot be used after select');
 
     const batchSize = options.batchSize ?? 1000;

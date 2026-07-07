@@ -1,10 +1,20 @@
 # Changelog
 
+## 0.6.0
+
+### Fixed
+
+- `forEach()` now returns a re-iterable `AsyncIterable` instead of a one-shot `AsyncGenerator`,
+  so the same returned value can be iterated more than once (each `for await` runs a fresh
+  keyset-paginated scan). Existing `for await (... of qb.forEach())` usage is unchanged.
+
 ## 0.5.0
 
 ### Added
 
-- Exported utility types `LeftJoinsAndSelects<Entity, Spec>` and `JoinsAndSelects<Entity, Spec>` for annotating return types of functions that hydrate relations via `leftJoinsAndSelects()` / `joinsAndSelects()`.
+- Exported utility types `LeftJoinsAndSelects<Entity, Spec>` and `JoinsAndSelects<Entity, Spec>`
+  for annotating return types of functions that hydrate relations via
+  `leftJoinsAndSelects()`/`joinsAndSelects()`.
 
 ## 0.4.0
 

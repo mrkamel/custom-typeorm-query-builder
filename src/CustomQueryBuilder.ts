@@ -554,51 +554,57 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this.qb.getManyAndCount();
   }
 
-  async *forEach(options: { batchSize?: number } = {}): AsyncGenerator<Entity, void, undefined> {
-    if (this.config.selects.length > 0) throw new CustomQueryBuilderError('forEach cannot be used after select');
+  forEach(options: { batchSize?: number } = {}): AsyncIterable<Entity> {
+    const self = this;
 
-    const batchSize = options.batchSize ?? 1000;
-    const primaryColumns = this.repository.metadata.primaryColumns;
+    return {
+      [Symbol.asyncIterator]: async function* () {
+        if (self.config.selects.length > 0) throw new CustomQueryBuilderError('forEach cannot be used after select');
 
-    if (primaryColumns.length === 0) {
-      throw new CustomQueryBuilderError(`Cannot iterate ${this.repository.metadata.name}: no primary key`);
-    }
+        const batchSize = options.batchSize ?? 1000;
+        const primaryColumns = self.repository.metadata.primaryColumns;
 
-    const columnList = primaryColumns.map((col) => `${this.alias}.${col.propertyName}`).join(', ');
-    let cursor: unknown[] | undefined;
+        if (primaryColumns.length === 0) {
+          throw new CustomQueryBuilderError(`Cannot iterate ${self.repository.metadata.name}: no primary key`);
+        }
 
-    while (true) {
-      const batch = this.clone();
+        const columnList = primaryColumns.map((col) => `${self.alias}.${col.propertyName}`).join(', ');
+        let cursor: unknown[] | undefined;
 
-      batch.qb.skip().take().limit(); // Remove any prior skip/take/limit
+        while (true) {
+          const batch = self.clone();
 
-      // First call replaces any prior limit and orderBy; subsequent calls append.
-      batch.qb.orderBy(`${this.alias}.${primaryColumns[0].propertyName}`, 'ASC');
-      primaryColumns.slice(1).forEach((col) => batch.qb.addOrderBy(`${this.alias}.${col.propertyName}`, 'ASC'));
+          batch.qb.skip().take().limit(); // Remove any prior skip/take/limit
 
-      if (cursor) {
-        const placeholders = primaryColumns.map((col) => `:_pk_${col.propertyName}`).join(', ');
-        const parameters: ObjectLiteral = {};
+          // First call replaces any prior limit and orderBy; subsequent calls append.
+          batch.qb.orderBy(`${self.alias}.${primaryColumns[0].propertyName}`, 'ASC');
+          primaryColumns.slice(1).forEach((col) => batch.qb.addOrderBy(`${self.alias}.${col.propertyName}`, 'ASC'));
 
-        primaryColumns.forEach((col, index) => { parameters[`_pk_${col.propertyName}`] = cursor![index]; });
+          if (cursor) {
+            const placeholders = primaryColumns.map((col) => `:_pk_${col.propertyName}`).join(', ');
+            const parameters: ObjectLiteral = {};
 
-        const { newCondition, newParameters } = batch.rewriteParameters(`(${columnList}) > (${placeholders})`, parameters);
+            primaryColumns.forEach((col, index) => { parameters[`_pk_${col.propertyName}`] = cursor![index]; });
 
-        batch.qb.andWhere(`(${newCondition})`, newParameters);
-      }
+            const { newCondition, newParameters } = batch.rewriteParameters(`(${columnList}) > (${placeholders})`, parameters);
 
-      batch.qb.take(batchSize);
+            batch.qb.andWhere(`(${newCondition})`, newParameters);
+          }
 
-      const rows = await batch.qb.getMany();
+          batch.qb.take(batchSize);
 
-      for (const row of rows) yield row;
+          const rows = await batch.qb.getMany();
 
-      if (rows.length < batchSize) return;
+          for (const row of rows) yield row;
 
-      const last = rows[rows.length - 1] as ObjectLiteral;
+          if (rows.length < batchSize) return;
 
-      cursor = primaryColumns.map((col) => last[col.propertyName]);
-    }
+          const last = rows[rows.length - 1] as ObjectLiteral;
+
+          cursor = primaryColumns.map((col) => last[col.propertyName]);
+        }
+      },
+    };
   }
 
   private applySetLock(lockMode: 'optimistic' | 'pessimistic_read' | 'pessimistic_write' | 'dirty_read', lockVersion?: number | Date) {

@@ -555,56 +555,56 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
   }
 
   forEach(options: { batchSize?: number } = {}): AsyncIterable<Entity> {
-    const self = this;
-
     return {
-      [Symbol.asyncIterator]: async function* () {
-        if (self.config.selects.length > 0) throw new CustomQueryBuilderError('forEach cannot be used after select');
-
-        const batchSize = options.batchSize ?? 1000;
-        const primaryColumns = self.repository.metadata.primaryColumns;
-
-        if (primaryColumns.length === 0) {
-          throw new CustomQueryBuilderError(`Cannot iterate ${self.repository.metadata.name}: no primary key`);
-        }
-
-        const columnList = primaryColumns.map((col) => `${self.alias}.${col.propertyName}`).join(', ');
-        let cursor: unknown[] | undefined;
-
-        while (true) {
-          const batch = self.clone();
-
-          batch.qb.skip().take().limit(); // Remove any prior skip/take/limit
-
-          // First call replaces any prior limit and orderBy; subsequent calls append.
-          batch.qb.orderBy(`${self.alias}.${primaryColumns[0].propertyName}`, 'ASC');
-          primaryColumns.slice(1).forEach((col) => batch.qb.addOrderBy(`${self.alias}.${col.propertyName}`, 'ASC'));
-
-          if (cursor) {
-            const placeholders = primaryColumns.map((col) => `:_pk_${col.propertyName}`).join(', ');
-            const parameters: ObjectLiteral = {};
-
-            primaryColumns.forEach((col, index) => { parameters[`_pk_${col.propertyName}`] = cursor![index]; });
-
-            const { newCondition, newParameters } = batch.rewriteParameters(`(${columnList}) > (${placeholders})`, parameters);
-
-            batch.qb.andWhere(`(${newCondition})`, newParameters);
-          }
-
-          batch.qb.take(batchSize);
-
-          const rows = await batch.qb.getMany();
-
-          for (const row of rows) yield row;
-
-          if (rows.length < batchSize) return;
-
-          const last = rows[rows.length - 1] as ObjectLiteral;
-
-          cursor = primaryColumns.map((col) => last[col.propertyName]);
-        }
-      },
+      [Symbol.asyncIterator]: (): AsyncIterator<Entity> => this.iterateBatches(options),
     };
+  }
+
+  private async *iterateBatches(options: { batchSize?: number }): AsyncGenerator<Entity> {
+    if (this.config.selects.length > 0) throw new CustomQueryBuilderError('forEach cannot be used after select');
+
+    const batchSize = options.batchSize ?? 1000;
+    const primaryColumns = this.repository.metadata.primaryColumns;
+
+    if (primaryColumns.length === 0) {
+      throw new CustomQueryBuilderError(`Cannot iterate ${this.repository.metadata.name}: no primary key`);
+    }
+
+    const columnList = primaryColumns.map((col) => `${this.alias}.${col.propertyName}`).join(', ');
+    let cursor: unknown[] | undefined;
+
+    while (true) {
+      const batch = this.clone();
+
+      batch.qb.skip().take().limit(); // Remove any prior skip/take/limit
+
+      // First call replaces any prior limit and orderBy; subsequent calls append.
+      batch.qb.orderBy(`${this.alias}.${primaryColumns[0].propertyName}`, 'ASC');
+      primaryColumns.slice(1).forEach((col) => batch.qb.addOrderBy(`${this.alias}.${col.propertyName}`, 'ASC'));
+
+      if (cursor) {
+        const placeholders = primaryColumns.map((col) => `:_pk_${col.propertyName}`).join(', ');
+        const parameters: ObjectLiteral = {};
+
+        primaryColumns.forEach((col, index) => { parameters[`_pk_${col.propertyName}`] = cursor![index]; });
+
+        const { newCondition, newParameters } = batch.rewriteParameters(`(${columnList}) > (${placeholders})`, parameters);
+
+        batch.qb.andWhere(`(${newCondition})`, newParameters);
+      }
+
+      batch.qb.take(batchSize);
+
+      const rows = await batch.qb.getMany();
+
+      for (const row of rows) yield row;
+
+      if (rows.length < batchSize) return;
+
+      const last = rows[rows.length - 1] as ObjectLiteral;
+
+      cursor = primaryColumns.map((col) => last[col.propertyName]);
+    }
   }
 
   private applySetLock(lockMode: 'optimistic' | 'pessimistic_read' | 'pessimistic_write' | 'dirty_read', lockVersion?: number | Date) {

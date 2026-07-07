@@ -1081,6 +1081,25 @@ describe('CustomQueryBuilder', () => {
       expect(yielded).toEqual([]);
     });
 
+    it('returns a re-iterable value that can be scanned more than once', async () => {
+      const created = [];
+
+      for (let index = 0; index < 5; index += 1) created.push(await createUser(`user${index}`, index));
+
+      const iterable = UserRepository.qb().forEach({ batchSize: 2 });
+
+      const first: string[] = [];
+      for await (const row of iterable) first.push(row.id);
+
+      const second: string[] = [];
+      for await (const row of iterable) second.push(row.id);
+
+      const expected = created.map((user) => user.id).sort();
+
+      expect(first.sort()).toEqual(expected);
+      expect(second.sort()).toEqual(expected);
+    });
+
     it('throws after select (projection)', async () => {
       const projected = UserRepository.qb().select('users.name');
 

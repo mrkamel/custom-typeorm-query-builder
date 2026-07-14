@@ -33,6 +33,61 @@ export const UserRepository = dataSource.getRepository(UserEntity).extend({
 });
 ```
 
+## Repository methods and scopes
+
+Every method of the repository the builder was created from is available directly on the
+builder instance, so plain repository methods can be called wherever it reads best:
+
+```ts
+await UserRepository.qb().findOneBy({ name: 'alice' });
+```
+
+Plain repository methods (`find`, `findOneBy`, `count`, `save`, …) run against the repository
+as usual — they do **not** see the conditions accumulated on the chain.
+
+### Scopes
+
+A repository method that returns a builder acts as a reusable **scope**. Define scopes with
+`extend`:
+
+```ts
+export const UserRepository = dataSource.getRepository(UserEntity).extend({
+  qb(alias: string = 'users') {
+    return new CustomQueryBuilder(this, alias);
+  },
+  adults(alias: string = 'users') {
+    return this.qb(alias).where('age >= :minAge', { minAge: 18 });
+  },
+});
+```
+
+Used as an entry point a scope behaves exactly as written. Used **mid-chain**, it *continues
+the current chain* — the operations it records are merged onto the builder it was called on:
+
+```ts
+// name IN (...) AND age >= 18
+await UserRepository.qb()
+  .where({ name: ['alice', 'teen'] })
+  .adults()
+  .getMany();
+
+await UserRepository.adults().getMany(); // also fine as the starting point
+```
+
+Scopes compose in any order, and a scope that hydrates relations (via
+`leftJoinsAndSelects`/`joinsAndSelects`) carries that relation typing through to the result.
+
+Notes:
+
+- The builder's own `update`/`delete` take precedence over the repository's same-named methods,
+  so `qb().where(...).delete()` deletes only the matched rows.
+- A scope just constructs a builder from its repository (`new CustomQueryBuilder(this, ...)`,
+  directly or through any helper such as `qb()` — the name is irrelevant). Merging happens
+  because the returned builder's recorded operations are appended to the current chain's, so an
+  intermediate throwaway builder inside a scope has no effect.
+- The merged chain keeps the alias of the builder the scope was called on, so a scope that
+  writes raw SQL should reference the same alias as the chain it extends.
+
 ## Examples
 
 ### Basic equality and `IS NULL`

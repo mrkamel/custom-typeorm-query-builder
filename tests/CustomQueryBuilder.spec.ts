@@ -4,6 +4,7 @@ import { ProfileRepository } from './repositories/ProfileRepository';
 import { PostRepository } from './repositories/PostRepository';
 import { CodeRepository } from './repositories/CodeRepository';
 import { Code } from './entities/CodeEntity';
+import { ProfileEntity } from './entities/ProfileEntity';
 import { MembershipRepository } from './repositories/MembershipRepository';
 import { dataSource } from './dataSource';
 import { randomUUID } from 'crypto';
@@ -35,6 +36,120 @@ describe('CustomQueryBuilder', () => {
       const result = await UserRepository.qb().none().getMany();
 
       expect(result).toEqual([]);
+    });
+  });
+
+  describe('repository delegation', () => {
+    it('exposes repository methods on the builder instance', async () => {
+      const alice = await createUser('alice', 30);
+      await createUser('bob', 40);
+
+      const found = await UserRepository.qb().findOneBy({ name: 'alice' });
+
+      expect(found?.id).toBe(alice.id);
+    });
+
+    it('runs a repository scope directly and returns a usable builder', async () => {
+      const alice = await createUser('alice', 30);
+      await createUser('teen', 15);
+
+      const result = await UserRepository.adults().getMany();
+
+      expect(result.map((user) => user.id)).toEqual([alice.id]);
+    });
+
+    it('merges a scope onto the current chain (continue-the-chain)', async () => {
+      const alice = await createUser('alice', 30);
+      await createUser('bob', 40);
+      await createUser('teen', 15);
+
+      const result = await UserRepository.qb()
+        .where({ name: ['alice', 'teen'] })
+        .adults()
+        .getMany();
+
+      expect(result.map((user) => user.id)).toEqual([alice.id]);
+    });
+
+    it('merges multiple scopes in a chain', async () => {
+      const alice = await createUser('alice', 30);
+      await createUser('bob', 40);
+      await createUser('aliceTeen', 15);
+
+      const result = await UserRepository.qb().adults().named('alice').getMany();
+
+      expect(result.map((user) => user.id)).toEqual([alice.id]);
+    });
+
+    it('keeps parameters from the base chain and the scope from colliding', async () => {
+      const alice = await createUser('alice', 30);
+      await createUser('old', 90);
+
+      const result = await UserRepository.qb()
+        .where('age < :maxAge', { maxAge: 50 })
+        .adults()
+        .getMany();
+
+      expect(result.map((user) => user.id)).toEqual([alice.id]);
+    });
+
+    it('merges the returned builder even when the scope builds another one first', async () => {
+      const alice = await createUser('alice', 30);
+      await createUser('bob', 40);
+      await createUser('teen', 15);
+
+      const result = await UserRepository.qb()
+        .where({ name: ['alice', 'teen'] })
+        .adultsViaHelper()
+        .getMany();
+
+      expect(result.map((user) => user.id)).toEqual([alice.id]);
+    });
+
+    it('keeps the widened type when a widening scope is merged last', async () => {
+      const alice = await createUser('alice', 30);
+      await createUser('teen', 15);
+      await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
+
+      const result = await UserRepository.qb()
+        .adults()
+        .withProfile()
+        .getMany();
+
+      expect(result.map((user) => user.id)).toEqual([alice.id]);
+      expect(result[0].profile?.bio).toBe('hello');
+
+      const profile: ProfileEntity | null = result[0].profile;
+      expect(profile?.bio).toBe('hello');
+    });
+
+    it('keeps the widened type AND the scopes when a widening scope is merged first', async () => {
+      const alice = await createUser('alice', 30);
+      await createUser('teen', 15);
+      await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
+
+      const result = await UserRepository.qb()
+        .withProfile()
+        .adults()
+        .getMany();
+
+      expect(result.map((user) => user.id)).toEqual([alice.id]);
+      expect(result[0].profile?.bio).toBe('hello');
+
+      const profile: ProfileEntity | null = result[0].profile;
+      expect(profile?.bio).toBe('hello');
+    });
+
+    it("the builder's own delete wins over the repository's delete", async () => {
+      const alice = await createUser('alice', 30);
+      await createUser('bob', 40);
+
+      await UserRepository.qb().where({ name: 'alice' }).delete();
+
+      const remaining = await UserRepository.qb().getMany();
+
+      expect(remaining.map((user) => user.name)).toEqual(['bob']);
+      void alice;
     });
   });
 

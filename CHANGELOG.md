@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.0
+
+### Added
+
+- Repository delegation: every method of the repository passed to the constructor is now
+  available directly on the builder instance (e.g. `UserRepository.qb().findOneBy(...)`).
+- Scopes: a repository method that returns a `CustomQueryBuilder` continues the current chain
+  when called on a builder — its conditions are merged onto the builder it was called on
+  (`UserRepository.qb().where(...).adults()`). Scopes compose in any order, including after a
+  relation-widening join, and the resulting relation types are preserved. The builder's own
+  `update`/`delete` take precedence over the repository's same-named methods.
+
 ## 0.6.0
 
 ### Fixed

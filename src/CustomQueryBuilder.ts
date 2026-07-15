@@ -143,6 +143,9 @@ type QueryBuilder<
 > = Omit<CustomQueryBuilderImpl<Entity, Projected, Repo>, Projected extends true ? 'getOne' | 'getMany' | 'getOneOrFail' | 'forEach' : never>
   & RepoMethods<Entity, Repo>;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyQueryBuilder = QueryBuilder<any, boolean>;
+
 type JoinMode = 'leftJoinAndSelect' | 'leftJoin' | 'innerJoinAndSelect' | 'innerJoin';
 
 type RelationSpecArg = Record<string, unknown> | readonly (string | Record<string, unknown>)[];
@@ -573,8 +576,8 @@ export class CustomQueryBuilderImpl<
 
   select(selection: string): QueryBuilder<Entity, true, Repo>;
   select(selection: string[]): QueryBuilder<Entity, true, Repo>;
-  select(subquery: QueryBuilder<Entity, boolean>, alias: string): QueryBuilder<Entity, true, Repo>;
-  select(selectionOrSubquery: string | string[] | QueryBuilder<Entity, boolean>, alias?: string): QueryBuilder<Entity, true, Repo> {
+  select(subquery: AnyQueryBuilder, alias: string): QueryBuilder<Entity, true, Repo>;
+  select(selectionOrSubquery: string | string[] | AnyQueryBuilder, alias?: string): QueryBuilder<Entity, true, Repo> {
     if (Array.isArray(selectionOrSubquery)) return this.record({ kind: 'select', selection: selectionOrSubquery });
     if (typeof selectionOrSubquery === 'string') return this.record({ kind: 'select', selection: [selectionOrSubquery] });
 

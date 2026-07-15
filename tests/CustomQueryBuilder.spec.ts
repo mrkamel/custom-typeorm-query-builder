@@ -15,6 +15,10 @@ async function createUser(name: string, age: number | null = null) {
   return await UserRepository.save({ name, age });
 }
 
+async function createPost({ title = 'Title', user_id }: { title?: string, user_id: string }) {
+  return await PostRepository.save({ title, user_id });
+}
+
 describe('CustomQueryBuilder', () => {
   describe('all', () => {
     it('returns every row clause', async () => {
@@ -990,6 +994,20 @@ describe('CustomQueryBuilder', () => {
       expect(rows).toHaveLength(1);
       expect(rows[0].users_id).toBe(carol.id);
       expect(Number(rows[0].oldCount)).toBe(2);
+    });
+
+    it('accepts a correlated subquery over a different entity', async () => {
+      const alice = await createUser('alice', 30);
+
+      await createPost({ user_id: alice.id });
+      await createPost({ user_id: alice.id });
+
+      const rows = await UserRepository.qb()
+        .select('users.id')
+        .select(PostRepository.qb().select('COUNT(*)').where('posts.user_id = users.id'), 'post_count')
+        .getRawMany();
+
+      expect(Number(rows.find((r) => r.users_id === alice.id).post_count)).toBe(2);
     });
 
     it('throws when called with a subquery but no alias', () => {

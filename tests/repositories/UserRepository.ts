@@ -1,6 +1,7 @@
 import { CustomQueryBuilder } from '../../src/CustomQueryBuilder';
 import { dataSource } from '../dataSource';
 import { UserEntity } from '../entities/UserEntity';
+import { PostRepository } from './PostRepository';
 
 export const UserRepository = dataSource.getRepository(UserEntity).extend({
   qb(alias: string = 'users') {
@@ -18,5 +19,11 @@ export const UserRepository = dataSource.getRepository(UserEntity).extend({
   adultsViaHelper() {
     this.qb('unrelated').where({ name: 'ignored' });
     return this.qb().where('age >= :minAge', { minAge: 18 });
+  },
+  withDifferentRepository() {
+    return PostRepository.qb();
+  },
+  withDifferentAlias() {
+    return this.qb('other');
   },
 });

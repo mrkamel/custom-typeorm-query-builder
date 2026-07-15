@@ -151,6 +151,14 @@ describe('CustomQueryBuilder', () => {
       expect(remaining.map((user) => user.name)).toEqual(['bob']);
       void alice;
     });
+
+    it('throws when merging a scope from a different repository', async () => {
+      expect(() => UserRepository.qb().withDifferentRepository()).toThrow('Cannot merge a scope built for a different repository');
+    });
+
+    it('throws when merging a scope with a different alias', async () => {
+      expect(() => UserRepository.qb().withDifferentAlias()).toThrow('Cannot merge a scope built with a different alias');
+    });
   });
 
   describe('where', () => {

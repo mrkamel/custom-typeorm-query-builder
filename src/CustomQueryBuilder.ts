@@ -239,6 +239,9 @@ export class CustomQueryBuilderImpl<
   }
 
   private continueWith(scope: CustomQueryBuilderImpl<ObjectLiteral, boolean, Repository<ObjectLiteral>>) {
+    if (scope.repository !== this.repository) throw new CustomQueryBuilderError('Cannot merge a scope built for a different repository');
+    if (scope.alias !== this.alias) throw new CustomQueryBuilderError('Cannot merge a scope built with a different alias');
+
     return this.withOps([...this.ops, ...scope.ops]);
   }
 

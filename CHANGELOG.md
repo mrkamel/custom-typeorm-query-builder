@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.0
+
+### Added
+
+- `defineQueryBuilder(repository, extensions)` — attach reusable, chainable custom
+  filter methods to a repository's builder. Each method runs with `this` bound to the
+  builder and returns a builder that still carries the custom methods, so custom and
+  built-in calls chain in any order. Extension names that collide with a built-in
+  method are rejected at compile time. Pass a thunk (`() => repository`) to break an
+  import cycle when the builder lives in its own module.
+
 ## 0.6.0
 
 ### Fixed

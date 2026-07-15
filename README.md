@@ -33,6 +33,79 @@ export const UserRepository = dataSource.getRepository(UserEntity).extend({
 });
 ```
 
+## Custom query builders
+
+`defineQueryBuilder` attaches reusable, chainable filter methods to a repository's
+builder. Each method runs with `this` bound to the builder, so it can call any
+built-in (`where`, joins, …) or another custom method, and every method returns a
+builder that still carries the custom methods — so custom and built-in calls chain
+in any order.
+
+Define the builder factory in the repository's source file and have `qb()` return
+it, so callers get the custom methods through the same `qb()` entry point they
+already use:
+
+```ts
+import { defineQueryBuilder } from 'custom-typeorm-query-builder';
+import { dataSource } from './dataSource';
+import { UserEntity } from './entities/UserEntity';
+
+export const UserRepository = dataSource.getRepository(UserEntity).extend({
+  qb(alias: string = 'users') {
+    return createUserQueryBuilder(alias);
+  },
+});
+
+const createUserQueryBuilder = defineQueryBuilder(UserRepository, {
+  named(name: string) {
+    return this.where({ name });
+  },
+  adults() {
+    return this.where('users.age >= :min', { min: 18 });
+  },
+  withProfile() {
+    return this.joinsAndSelects(['profile']);
+  },
+});
+```
+
+Now every `UserRepository.qb()` chain has the custom methods available alongside
+the built-ins, in any order:
+
+```ts
+await UserRepository.qb().adults().named('alice').getMany();
+await UserRepository.qb().where({ name: 'alice' }).adults().getMany();
+```
+
+Relation narrowing survives a custom join method, so a hydrated relation stays
+non-nullable through the rest of the chain:
+
+```ts
+const user = await UserRepository.qb().withProfile().getOneOrFail();
+user.profile.bio;
+```
+
+`defineQueryBuilder` returns a factory that requires the alias to use, so pick the
+default in your `qb()` wrapper (as above) and let callers override it per query:
+
+```ts
+await UserRepository.qb('u').where('u.age >= :min', { min: 18 }).getMany();
+```
+
+Defining the builder in the repository's module (as above) has no import cycle. If
+you split it into its own file, that file and the repository import each other —
+pass a thunk so the repository resolves lazily and load order stops mattering:
+
+```ts
+const createUserQueryBuilder = defineQueryBuilder(() => UserRepository, { /* ... */ });
+```
+
+Immutability is preserved — every call, custom or built-in, returns a clone. An
+extension whose name collides with a built-in builder method is a compile-time
+error. A raw-SQL extension that hardcodes an alias (like `adults` above) is tied to
+that alias, so use the default alias with it or write the condition against the
+alias you pass.
+
 ## Examples
 
 ### Basic equality and `IS NULL`

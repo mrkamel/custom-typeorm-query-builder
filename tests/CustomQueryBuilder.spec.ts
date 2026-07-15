@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { defineQueryBuilder } from '../src/CustomQueryBuilder';
 import { UserRepository } from './repositories/UserRepository';
 import { ProfileRepository } from './repositories/ProfileRepository';
 import { PostRepository } from './repositories/PostRepository';
@@ -1198,6 +1199,150 @@ describe('CustomQueryBuilder', () => {
 
       const updated = await UserRepository.findOneByOrFail({ id: alice.id });
       expect(updated.age).toBe(35);
+    });
+  });
+});
+
+const createUserQueryBuilder = defineQueryBuilder(UserRepository, {
+  named(name: string) {
+    return this.where({ name });
+  },
+  adults() {
+    return this.where('users.age >= :min', { min: 18 });
+  },
+  withProfile() {
+    return this.joinsAndSelects(['profile']);
+  },
+  hasProfile() {
+    return this.joins(['profile']);
+  },
+});
+
+const createPostQueryBuilder = defineQueryBuilder(() => PostRepository, {
+  authoredBy(name: string) {
+    return this.joins(['user']).where('user.name = :name', { name });
+  },
+});
+
+describe('defineQueryBuilder', () => {
+  it('runs a custom filter method', async () => {
+    const alice = await createUser('alice', 30);
+    await createUser('bob', 10);
+
+    const result = await createUserQueryBuilder('users').adults().getMany();
+
+    expect(result.map((user) => user.id)).toEqual([alice.id]);
+  });
+
+  it('chains a custom method after a built-in', async () => {
+    const alice = await createUser('alice', 30);
+    await createUser('alice', 10);
+
+    const result = await createUserQueryBuilder('users').where({ name: 'alice' }).adults().getMany();
+
+    expect(result.map((user) => user.id)).toEqual([alice.id]);
+  });
+
+  it('chains a built-in after a custom method', async () => {
+    const alice = await createUser('alice', 30);
+    await createUser('bob', 30);
+
+    const result = await createUserQueryBuilder('users').adults().where({ name: 'alice' }).getMany();
+
+    expect(result.map((user) => user.id)).toEqual([alice.id]);
+  });
+
+  it('chains two custom methods', async () => {
+    const alice = await createUser('alice', 30);
+    await createUser('carol', 30);
+    await createUser('alice', 10);
+
+    const result = await createUserQueryBuilder('users').adults().named('alice').getMany();
+
+    expect(result.map((user) => user.id)).toEqual([alice.id]);
+  });
+
+  it('keeps each builder immutable', async () => {
+    await createUser('alice', 30);
+
+    const base = createUserQueryBuilder('users').adults();
+    const named = base.named('bob');
+
+    expect(await base.getCount()).toBe(1);
+    expect(await named.getCount()).toBe(0);
+  });
+
+  it('accepts an explicit alias', async () => {
+    const alice = await createUser('alice', 30);
+    await createUser('bob', 10);
+
+    const result = await createUserQueryBuilder('u')
+      .named('alice')
+      .where('u.age >= :min', { min: 18 })
+      .getMany();
+
+    expect(result.map((user) => user.id)).toEqual([alice.id]);
+  });
+
+  it('hydrates a relation from a custom join method and narrows the type', async () => {
+    const alice = await createUser('alice', 30);
+    await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
+
+    const user = await createUserQueryBuilder('users').withProfile().where({ name: 'alice' }).getOneOrFail();
+
+    expect(user.profile.bio).toBe('hello');
+  });
+
+  it('chains a built-in join filter after a custom join method', async () => {
+    const alice = await createUser('alice', 30);
+    await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
+    await createUser('bob', 30);
+
+    const result = await createUserQueryBuilder('users')
+      .hasProfile()
+      .where('profile.bio = :bio', { bio: 'hello' })
+      .adults()
+      .getMany();
+
+    expect(result.map((user) => user.id)).toEqual([alice.id]);
+  });
+
+  it('supports a join-based custom method on another repository (defined via a thunk)', async () => {
+    const alice = await createUser('alice', 30);
+    const bob = await createUser('bob', 30);
+    await PostRepository.save({ title: 'a', user_id: alice.id });
+    await PostRepository.save({ title: 'b', user_id: bob.id });
+
+    const result = await createPostQueryBuilder('posts').authoredBy('alice').getMany();
+
+    expect(result.map((post) => post.title)).toEqual(['a']);
+  });
+
+  it('resolves a thunk repository lazily', async () => {
+    let resolved = 0;
+    const createLazy = defineQueryBuilder(() => { resolved++; return UserRepository; }, {
+      adults() {
+        return this.where('users.age >= :min', { min: 18 });
+      },
+    });
+
+    expect(resolved).toBe(0);
+
+    const alice = await createUser('alice', 30);
+    await createUser('bob', 10);
+
+    const result = await createLazy('users').adults().getMany();
+
+    expect(resolved).toBeGreaterThan(0);
+    expect(result.map((user) => user.id)).toEqual([alice.id]);
+  });
+
+  it('rejects an extension whose name collides with a built-in at compile time', () => {
+    defineQueryBuilder(UserRepository, {
+      // @ts-expect-error `where` collides with a built-in query builder method
+      where() {
+        return this.all();
+      },
     });
   });
 });

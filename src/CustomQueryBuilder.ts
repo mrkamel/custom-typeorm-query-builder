@@ -713,24 +713,20 @@ type ForbidBuiltInNames<Entity extends ObjectLiteral> = {
 export type QueryBuilderExtensions<Entity extends ObjectLiteral, Ext extends object> =
   Ext & ThisType<QueryBuilder<Entity, false, Ext>> & ForbidBuiltInNames<Entity>;
 
-type IsEqual<A, B> =
-  (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
-
 type ExtensionEntity<Ret> =
   Ret extends { getMany(): Promise<(infer R)[]> } ? (R extends ObjectLiteral ? R : never) : never;
 
-// Re-type each extension so it composes with join narrowing. A method that returns the base
-// entity unchanged (e.g. it only adds `where`/`orderBy`) becomes polymorphic over the current
-// entity, so calling it after a join keeps the joined type instead of resetting to the base.
-// A method that narrows (adds a `*AndSelect` join) keeps its own narrowed return type.
+// Re-type each extension so it composes with join narrowing. An entity-returning method becomes
+// polymorphic over the current entity and intersects its own result onto it, so its joins add to
+// whatever the chain has already narrowed rather than resetting to the base entity. A method that
+// only adds `where`/`orderBy` returns the base entity, so the intersection is a no-op and the
+// current narrowing is preserved.
 type PolymorphicExtensions<Entity extends ObjectLiteral, Ext extends object> = {
   [K in keyof Ext]: Ext[K] extends (...args: infer A) => infer Ret
     ? [ExtensionEntity<Ret>] extends [never]
       ? Ext[K]
-      : IsEqual<ExtensionEntity<Ret>, Entity> extends true
-        ? <Current extends ObjectLiteral>(this: { getMany(): Promise<Current[]> }, ...args: A)
-            => QueryBuilder<Current, false, PolymorphicExtensions<Entity, Ext>>
-        : (...args: A) => QueryBuilder<ExtensionEntity<Ret> & ObjectLiteral, false, PolymorphicExtensions<Entity, Ext>>
+      : <Current extends ObjectLiteral>(this: { getMany(): Promise<Current[]> }, ...args: A)
+          => QueryBuilder<Current & ExtensionEntity<Ret>, false, PolymorphicExtensions<Entity, Ext>>
     : Ext[K];
 };
 

@@ -1382,4 +1382,19 @@ describe('defineQueryBuilder', () => {
     expect(rows[0].posts.map((post) => post.title)).toEqual(['a']);
     expect(rows[0].profile.bio).toBe('hello');
   });
+
+  it('applies a shared, entity-generic extension and keeps join narrowing', async () => {
+    const alice = await createUser({ name: 'alice' });
+    await createPost({ title: 'a', user_id: alice.id });
+    await createPost({ title: 'b', user_id: alice.id });
+
+    const [rows, total] = await UserRepository.cqb()
+      .withPosts()
+      .where({ name: 'alice' })
+      .paginate({ page: 1, perPage: 10 })
+      .getManyAndCount();
+
+    expect(rows[0].posts.map((post) => post.title).sort()).toEqual(['a', 'b']);
+    expect(total).toBe(1);
+  });
 });

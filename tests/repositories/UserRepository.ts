@@ -1,8 +1,15 @@
-import { CustomQueryBuilder, defineQueryBuilder } from '../../src/CustomQueryBuilder';
+import { CustomQueryBuilder, defineQueryBuilder, defineSharedQueryBuilder } from '../../src/CustomQueryBuilder';
 import { dataSource } from '../dataSource';
 import { UserEntity } from '../entities/UserEntity';
 
+const sharedQueryBuilder = defineSharedQueryBuilder({
+  paginate({ page, perPage }: { page: number, perPage: number }) {
+    return this.skip((page - 1) * perPage).take(perPage);
+  },
+});
+
 const createUserQueryBuilder = defineQueryBuilder(() => UserRepository, {
+  ...sharedQueryBuilder,
   named(name: string) {
     return this.where({ name });
   },

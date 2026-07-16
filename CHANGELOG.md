@@ -17,6 +17,11 @@
 - Exported type `QueryBuilderExtensions<Entity, Ext>` — the extensions-argument type of
   `defineQueryBuilder`, for wrapping it in a base-repository helper that threads the
   extensions into a shared `qb()`.
+- `defineSharedQueryBuilder(extensions)` — define entity-agnostic extension methods (e.g.
+  `paginate`) once and spread them into any `defineQueryBuilder`. A shared method can use
+  any built-in and call sibling shared methods; it never narrows relations, so it
+  preserves whatever the chain has already joined. Names that collide with a built-in are
+  rejected at compile time. Also exports the type `SharedQueryBuilder<Shared>`.
 
 ## 0.6.0
 

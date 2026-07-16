@@ -114,6 +114,41 @@ error. A raw-SQL extension that hardcodes an alias (like `adults` above) is tied
 that alias, so use the default alias with it or write the condition against the
 alias you pass.
 
+### Sharing extensions across query builders
+
+Some methods are entity-agnostic — e.g. a `paginate` method might only touch
+`skip`/`take`. Define these once with `defineSharedQueryBuilder` and spread them into any
+`defineQueryBuilder`:
+
+```ts
+import { defineQueryBuilder, defineSharedQueryBuilder } from 'custom-typeorm-query-builder';
+
+export const sharedQueryBuilder = defineSharedQueryBuilder({
+  paginate({ page, perPage }: { page: number, perPage: number }) {
+    return this.skip((page - 1) * perPage).take(perPage);
+  },
+});
+
+const createUserQueryBuilder = defineQueryBuilder(() => UserRepository, {
+  ...sharedQueryBuilder,
+  adults() {
+    return this.where('users.age >= :min', { min: 18 });
+  },
+  withPosts() {
+    return this.leftJoinsAndSelects(['posts']);
+  },
+});
+
+await UserRepository.qb().withPosts().adults().paginate({ page: 1, perPage: 20 }).getManyAndCount();
+```
+
+A shared method can use any built-in and call sibling shared methods, but it has no
+knowledge of the concrete entity — the object forms of `where`/`orderBy` accept any keys
+without per-column checking, so use the raw-SQL forms when you need type safety. It never
+narrows relations, so it preserves whatever the chain has already joined — `paginate`
+above keeps the `withPosts()` hydration. Names that collide with a built-in are a
+compile-time error.
+
 ## Examples
 
 ### Basic equality and `IS NULL`

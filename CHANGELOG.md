@@ -23,6 +23,14 @@
   preserves whatever the chain has already joined. Names that collide with a built-in are
   rejected at compile time. Also exports the type `SharedQueryBuilder<Shared>`.
 
+### Fixed
+
+- An invalid relation name in a `joins`/`leftJoinsAndSelects`/`joinsAndSelects` spec now
+  reports a single "does not exist" error pointing at the offending key. On a cyclic entity
+  graph (A → B → A) the join-spec type previously expanded without bound, tripping
+  TypeScript's circular-mapped-type limiter and burying the real error under a cascade of
+  TS2615 messages; the spec's recursion is now depth-bounded (8 levels).
+
 ## 0.6.0
 
 ### Fixed

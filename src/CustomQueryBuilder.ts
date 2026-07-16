@@ -121,7 +121,14 @@ type QueryBuilder<Entity extends ObjectLiteral, Projected extends boolean = fals
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyQueryBuilder = QueryBuilder<any, boolean>;
 
+// Module-private phantom key. It carries the builder's entity and projection through the
+// `Omit<...> & Ext` alias so custom extensions can recover both from `this` (see
+// PolymorphicExtensions). Not exported, so it never appears in a consumer-facing type.
+declare const ENTITY_BRAND: unique symbol;
+
 export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends boolean = false, Ext extends object = Record<never, never>> {
+  declare readonly [ENTITY_BRAND]?: { entity: Entity, projected: Projected };
+
   #repository: Repository<Entity>;
   #alias: string;
   #qb: SelectQueryBuilder<Entity>;
@@ -716,17 +723,20 @@ export type QueryBuilderExtensions<Entity extends ObjectLiteral, Ext extends obj
 type ExtensionEntity<Ret> =
   Ret extends { getMany(): Promise<(infer R)[]> } ? (R extends ObjectLiteral ? R : never) : never;
 
-// Re-type each extension so it composes with join narrowing. An entity-returning method becomes
-// polymorphic over the current entity and intersects its own result onto it, so its joins add to
-// whatever the chain has already narrowed rather than resetting to the base entity. A method that
-// only adds `where`/`orderBy` returns the base entity, so the intersection is a no-op and the
-// current narrowing is preserved.
+// Re-type each extension so it composes with the rest of the chain. An entity-returning method
+// becomes polymorphic over the current entity and projection (recovered from `this` via the brand):
+// it intersects its own result onto the current entity — so its joins add to whatever the chain has
+// already narrowed rather than resetting to the base — and preserves the current projection, so it
+// stays callable after `select()` and keeps `getMany`/`getOne` omitted there, exactly like a
+// built-in. A method that only adds `where`/`orderBy` returns the base entity, so the intersection
+// is a no-op and the current narrowing is preserved.
 type PolymorphicExtensions<Entity extends ObjectLiteral, Ext extends object> = {
   [K in keyof Ext]: Ext[K] extends (...args: infer A) => infer Ret
     ? [ExtensionEntity<Ret>] extends [never]
       ? Ext[K]
-      : <Current extends ObjectLiteral>(this: { getMany(): Promise<Current[]> }, ...args: A)
-          => QueryBuilder<Current & ExtensionEntity<Ret>, false, PolymorphicExtensions<Entity, Ext>>
+      : <Current extends ObjectLiteral, CurrentProjected extends boolean>(
+          this: { readonly [ENTITY_BRAND]?: { entity: Current, projected: CurrentProjected } }, ...args: A
+        ) => QueryBuilder<Current & ExtensionEntity<Ret>, CurrentProjected, PolymorphicExtensions<Entity, Ext>>
     : Ext[K];
 };
 

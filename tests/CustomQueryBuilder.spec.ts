@@ -321,47 +321,47 @@ describe('CustomQueryBuilder', () => {
   describe('leftJoinAndSelect', () => {
     it('joins and hydrates the related entity', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'hello', user_id: alice.id });
+      await createProfile({ bio: 'bio', user_id: alice.id });
 
       const result = await UserRepository.qb()
         .leftJoinAndSelect<['profile']>('users.profile', 'profile')
         .where({ id: alice.id })
         .getOne();
 
-      expect(result?.profile?.bio).toBe('hello');
+      expect(result?.profile?.bio).toBe('bio');
     });
   });
 
   describe('leftJoinsAndSelects', () => {
     it('joins and selects a single to-one relation', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'hello', user_id: alice.id });
+      await createProfile({ bio: 'bio', user_id: alice.id });
 
       const result = await UserRepository.qb()
         .leftJoinsAndSelects(['profile'])
         .where({ id: alice.id })
         .getOne();
 
-      expect(result?.profile?.bio).toBe('hello');
+      expect(result?.profile?.bio).toBe('bio');
     });
 
     it('accepts an array of relation names', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'hello', user_id: alice.id });
-      await createPost({ title: 'one', user_id: alice.id });
+      await createProfile({ bio: 'bio', user_id: alice.id });
+      await createPost({ title: 'title', user_id: alice.id });
 
       const result = await UserRepository.qb()
         .leftJoinsAndSelects(['profile', 'posts'])
         .where({ id: alice.id })
         .getOne();
 
-      expect(result?.profile?.bio).toBe('hello');
-      expect(result?.posts.map((post) => post.title)).toEqual(['one']);
+      expect(result?.profile?.bio).toBe('bio');
+      expect(result?.posts.map((post) => post.title)).toEqual(['title']);
     });
 
     it('accepts an array as the value of an object entry', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'hello', user_id: alice.id });
+      await createProfile({ bio: 'bio', user_id: alice.id });
       await createPost({ user_id: alice.id });
 
       const result = await PostRepository.qb()
@@ -369,27 +369,27 @@ describe('CustomQueryBuilder', () => {
         .getOne();
 
       expect(result?.user?.id).toBe(alice.id);
-      expect(result?.user?.profile?.bio).toBe('hello');
+      expect(result?.user?.profile?.bio).toBe('bio');
     });
 
     it('mixes string entries and nested-spec objects in the same array', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'hello', user_id: alice.id });
-      await createPost({ title: 'one', user_id: alice.id });
+      await createProfile({ bio: 'bio', user_id: alice.id });
+      await createPost({ title: 'title', user_id: alice.id });
 
       const result = await UserRepository.qb('parent_users')
         .leftJoinsAndSelects(['profile', { posts: ['user'] }])
         .where({ id: alice.id })
         .getOne();
 
-      expect(result?.profile?.bio).toBe('hello');
-      expect(result?.posts.map((post) => post.title)).toEqual(['one']);
+      expect(result?.profile?.bio).toBe('bio');
+      expect(result?.posts.map((post) => post.title)).toEqual(['title']);
       expect(result?.posts[0].user?.id).toBe(alice.id);
     });
 
     it('joins and selects multiple relations at once', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'hello', user_id: alice.id });
+      await createProfile({ bio: 'bio', user_id: alice.id });
       await createPost({ title: 'one', user_id: alice.id });
       await createPost({ title: 'two', user_id: alice.id });
 
@@ -398,13 +398,13 @@ describe('CustomQueryBuilder', () => {
         .where({ id: alice.id })
         .getOne();
 
-      expect(result?.profile?.bio).toBe('hello');
+      expect(result?.profile?.bio).toBe('bio');
       expect(result?.posts.map((post) => post.title).sort()).toEqual(['one', 'two']);
     });
 
     it('joins and selects nested relations using target table names as aliases', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'hello', user_id: alice.id });
+      await createProfile({ bio: 'bio', user_id: alice.id });
       await createPost({ user_id: alice.id });
 
       const result = await PostRepository.qb()
@@ -412,13 +412,13 @@ describe('CustomQueryBuilder', () => {
         .getOne();
 
       expect(result?.user?.id).toBe(alice.id);
-      expect(result?.user?.profile?.bio).toBe('hello');
+      expect(result?.user?.profile?.bio).toBe('bio');
     });
 
     it('uses LEFT JOIN and keeps rows without the relation', async () => {
       const alice = await createUser({ name: 'alice' });
       const bob = await createUser({ name: 'bob' });
-      await createProfile({ bio: 'hello', user_id: alice.id });
+      await createProfile({ bio: 'bio', user_id: alice.id });
 
       const result = await UserRepository.qb()
         .leftJoinsAndSelects(['profile'])
@@ -426,18 +426,18 @@ describe('CustomQueryBuilder', () => {
         .getMany();
 
       expect(result.map((user) => user.id)).toEqual([alice.id, bob.id]);
-      expect(result[0].profile?.bio).toBe('hello');
+      expect(result[0].profile?.bio).toBe('bio');
       expect(result[1].profile).toBeNull();
     });
 
     it('exposes the join alias for use in where clauses', async () => {
       const alice = await createUser({ name: 'alice' });
       await createUser({ name: 'bob' });
-      await createProfile({ bio: 'hello', user_id: alice.id });
+      await createProfile({ bio: 'bio', user_id: alice.id });
 
       const result = await UserRepository.qb()
         .leftJoinsAndSelects(['profile'])
-        .where('profile.bio = :bio', { bio: 'hello' })
+        .where('profile.bio = :bio', { bio: 'bio' })
         .getMany();
 
       expect(result.map((user) => user.id)).toEqual([alice.id]);
@@ -464,14 +464,14 @@ describe('CustomQueryBuilder', () => {
     it('inner-joins a single relation and hydrates it', async () => {
       const alice = await createUser({ name: 'alice' });
       await createUser({ name: 'bob' });
-      await createProfile({ bio: 'hello', user_id: alice.id });
+      await createProfile({ bio: 'bio', user_id: alice.id });
 
       const result = await UserRepository.qb()
         .joinsAndSelects(['profile'])
         .getMany();
 
       expect(result.map((user) => user.id)).toEqual([alice.id]);
-      expect(result[0].profile.bio).toBe('hello');
+      expect(result[0].profile.bio).toBe('bio');
     });
 
     it('filters out rows without the relation', async () => {
@@ -490,7 +490,7 @@ describe('CustomQueryBuilder', () => {
 
     it('hydrates nested relations using target table names as aliases', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'hello', user_id: alice.id });
+      await createProfile({ bio: 'bio', user_id: alice.id });
       await createPost({ title: 'one', user_id: alice.id });
 
       const bob = await createUser({ name: 'bob' });
@@ -501,19 +501,19 @@ describe('CustomQueryBuilder', () => {
         .getMany();
 
       expect(result.map((post) => post.title)).toEqual(['one']);
-      expect(result[0].user.profile.bio).toBe('hello');
+      expect(result[0].user.profile.bio).toBe('bio');
     });
 
     it('exposes the join alias for use in where clauses', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'hello', user_id: alice.id });
+      await createProfile({ bio: 'bio', user_id: alice.id });
       const carol = await createUser({ name: 'carol' });
       await createProfile({ user_id: carol.id });
       const _bob = await createUser({ name: 'bob' });
 
       const result = await UserRepository.qb()
         .joinsAndSelects(['profile'])
-        .where('profile.bio = :bio', { bio: 'hello' })
+        .where('profile.bio = :bio', { bio: 'bio' })
         .getMany();
 
       expect(result.map((user) => user.id)).toEqual([alice.id]);
@@ -552,14 +552,14 @@ describe('CustomQueryBuilder', () => {
 
     it('exposes the table-name alias for use in where clauses', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'hello', user_id: alice.id });
+      await createProfile({ bio: 'bio', user_id: alice.id });
       const carol = await createUser({ name: 'carol' });
       await createProfile({ user_id: carol.id });
       const _bob = await createUser({ name: 'bob' });
 
       const result = await UserRepository.qb()
         .joins(['profile'])
-        .where('profile.bio = :bio', { bio: 'hello' })
+        .where('profile.bio = :bio', { bio: 'bio' })
         .getMany();
 
       expect(result.map((user) => user.id)).toEqual([alice.id]);
@@ -623,15 +623,15 @@ describe('CustomQueryBuilder', () => {
 
     it('accepts nested specs', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'hello', user_id: alice.id });
-      await createPost({ title: 'one', user_id: alice.id });
+      await createProfile({ bio: 'bio', user_id: alice.id });
+      await createPost({ title: 'title', user_id: alice.id });
 
       const result = await PostRepository.qb()
         .leftJoins({ user: ['profile'] })
-        .where('profile.bio = :bio', { bio: 'hello' })
+        .where('profile.bio = :bio', { bio: 'bio' })
         .getMany();
 
-      expect(result.map((post) => post.title)).toEqual(['one']);
+      expect(result.map((post) => post.title)).toEqual(['title']);
     });
 
     it('rejects unknown relations at the type level', () => {
@@ -646,11 +646,11 @@ describe('CustomQueryBuilder', () => {
   describe('leftJoin', () => {
     it('joins without selecting the related entity', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'hello', user_id: alice.id });
+      await createProfile({ bio: 'bio', user_id: alice.id });
 
       const result = await UserRepository.qb()
         .leftJoin<['profile']>('users.profile', 'profile')
-        .where('profile.bio = :bio', { bio: 'hello' })
+        .where('profile.bio = :bio', { bio: 'bio' })
         .getOne();
 
       expect(result?.id).toBe(alice.id);
@@ -662,14 +662,14 @@ describe('CustomQueryBuilder', () => {
     it('only returns rows that have a matching relation', async () => {
       const alice = await createUser({ name: 'alice' });
       await createUser({ name: 'bob' });
-      await createProfile({ bio: 'hello', user_id: alice.id });
+      await createProfile({ bio: 'bio', user_id: alice.id });
 
       const result = await UserRepository.qb()
         .innerJoinAndSelect<['profile']>('users.profile', 'profile')
         .getMany();
 
       expect(result.map((user) => user.id)).toEqual([alice.id]);
-      expect(result[0].profile?.bio).toBe('hello');
+      expect(result[0].profile?.bio).toBe('bio');
     });
   });
 
@@ -1303,21 +1303,21 @@ describe('defineQueryBuilder', () => {
 
   it('hydrates a relation from a custom join method and narrows the type', async () => {
     const alice = await createUser({ name: 'alice' });
-    await createProfile({ bio: 'hello', user_id: alice.id });
+    await createProfile({ bio: 'bio', user_id: alice.id });
 
     const user = await UserRepository.cqb().withProfile().where({ name: 'alice' }).getOneOrFail();
 
-    expect(user.profile.bio).toBe('hello');
+    expect(user.profile.bio).toBe('bio');
   });
 
   it('chains a built-in join filter after a custom join method', async () => {
     const alice = await createUser({ name: 'alice', age: 30 });
-    await createProfile({ bio: 'hello', user_id: alice.id });
+    await createProfile({ bio: 'bio', user_id: alice.id });
     await createUser({ name: 'bob', age: 30 });
 
     const result = await UserRepository.cqb()
       .hasProfile()
-      .where('profile.bio = :bio', { bio: 'hello' })
+      .where('profile.bio = :bio', { bio: 'bio' })
       .adults()
       .getMany();
 
@@ -1327,12 +1327,12 @@ describe('defineQueryBuilder', () => {
   it('supports a join-based custom method on another repository (defined via a thunk)', async () => {
     const alice = await createUser({ name: 'alice' });
     const bob = await createUser({ name: 'bob' });
-    await createPost({ title: 'a', user_id: alice.id });
+    await createPost({ title: 'title', user_id: alice.id });
     await createPost({ user_id: bob.id });
 
     const result = await PostRepository.cqb().authoredBy('alice').getMany();
 
-    expect(result.map((post) => post.title)).toEqual(['a']);
+    expect(result.map((post) => post.title)).toEqual(['title']);
   });
 
   it('runs against the repository passed to the factory, preserving its transaction context', async () => {
@@ -1355,8 +1355,8 @@ describe('defineQueryBuilder', () => {
 
   it('keeps a join-narrowed type when a preserving custom method is chained after the join', async () => {
     const alice = await createUser({ name: 'alice' });
-    await createPost({ title: 'a', user_id: alice.id });
-    await createPost({ title: 'b', user_id: alice.id });
+    await createPost({ title: 'title 1', user_id: alice.id });
+    await createPost({ title: 'title 2', user_id: alice.id });
 
     const rows = await UserRepository.cqb()
       .withPosts()
@@ -1364,13 +1364,13 @@ describe('defineQueryBuilder', () => {
       .orderedByName()
       .getMany();
 
-    expect(rows[0].posts.map((post) => post.title).sort()).toEqual(['a', 'b']);
+    expect(rows[0].posts.map((post) => post.title).sort()).toEqual(['title 1', 'title 2']);
   });
 
   it('accumulates the narrowed type across multiple custom join methods', async () => {
     const alice = await createUser({ name: 'alice' });
-    await createProfile({ bio: 'hello', user_id: alice.id });
-    await createPost({ title: 'a', user_id: alice.id });
+    await createProfile({ bio: 'bio', user_id: alice.id });
+    await createPost({ title: 'title', user_id: alice.id });
 
     const rows = await UserRepository.cqb()
       .withPosts()
@@ -1379,14 +1379,14 @@ describe('defineQueryBuilder', () => {
       .orderedByName()
       .getMany();
 
-    expect(rows[0].posts.map((post) => post.title)).toEqual(['a']);
-    expect(rows[0].profile.bio).toBe('hello');
+    expect(rows[0].posts.map((post) => post.title)).toEqual(['title']);
+    expect(rows[0].profile.bio).toBe('bio');
   });
 
   it('applies a shared, entity-generic extension and keeps join narrowing', async () => {
     const alice = await createUser({ name: 'alice' });
-    await createPost({ title: 'a', user_id: alice.id });
-    await createPost({ title: 'b', user_id: alice.id });
+    await createPost({ title: 'title 1', user_id: alice.id });
+    await createPost({ title: 'title 2', user_id: alice.id });
 
     const [rows, total] = await UserRepository.cqb()
       .withPosts()
@@ -1394,7 +1394,20 @@ describe('defineQueryBuilder', () => {
       .paginate({ page: 1, perPage: 10 })
       .getManyAndCount();
 
-    expect(rows[0].posts.map((post) => post.title).sort()).toEqual(['a', 'b']);
+    expect(rows[0].posts.map((post) => post.title).sort()).toEqual(['title 1', 'title 2']);
     expect(total).toBe(1);
+  });
+
+  it('keeps a custom method callable after select() and preserves the projection', async () => {
+    await createUser({ name: 'alice', age: 30 });
+    await createUser({ name: 'bob', age: 10 });
+
+    const projected = UserRepository.cqb().select('users.name').adults();
+
+    const rows = await projected.getRawMany();
+    expect(rows.map((row) => row.users_name)).toEqual(['alice']);
+
+    // @ts-expect-error getMany is unavailable after select()
+    void projected.getMany;
   });
 });

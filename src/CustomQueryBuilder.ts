@@ -62,13 +62,20 @@ type RelationKey<Entity> = {
 type UnionToIntersection<Union> =
   (Union extends unknown ? (k: Union) => void : never) extends (k: infer Intersection) => void ? Intersection : never;
 
-type JoinSpecItem<Entity> =
-  | RelationKey<Entity>
-  | { [K in RelationKey<Entity>]?: JoinSpec<UnwrapRelation<Entity[K]>> };
+// Bound the recursion depth so a cyclic entity graph (A → B → A) can't expand JoinSpec forever.
+// Without a bound, an invalid relation key forces TypeScript to expand the whole cycle to report
+// the error, which trips its circular-mapped-type limiter and buries the real "does not exist"
+// message under a cascade of TS2615 errors. 8 levels is far deeper than any realistic join spec.
+type DecrementingDepth = [never, 0, 1, 2, 3, 4, 5, 6, 7, 8];
 
-type JoinSpec<Entity> =
-  | readonly JoinSpecItem<Entity>[]
-  | { [K in RelationKey<Entity>]?: JoinSpec<UnwrapRelation<Entity[K]>> };
+type JoinSpecItem<Entity, Depth extends number = 8> =
+  | RelationKey<Entity>
+  | { [K in RelationKey<Entity>]?: JoinSpec<UnwrapRelation<Entity[K]>, DecrementingDepth[Depth]> };
+
+type JoinSpec<Entity, Depth extends number = 8> =
+  Depth extends 0 ? never :
+  | readonly JoinSpecItem<Entity, Depth>[]
+  | { [K in RelationKey<Entity>]?: JoinSpec<UnwrapRelation<Entity[K]>, DecrementingDepth[Depth]> };
 
 type ApplyLeftJoinsAndSelectsNested<Value, NestedSpec> =
   NonNullable<Value> extends (infer U)[]

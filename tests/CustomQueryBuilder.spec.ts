@@ -456,6 +456,13 @@ describe('CustomQueryBuilder', () => {
           // @ts-expect-error title is a scalar, not a relation on PostEntity
           posts: ['title'],
         });
+
+        UserRepository.qb().leftJoinsAndSelects({
+          posts: {
+            // @ts-expect-error nonexistent is not a relation on PostEntity (nested, over the User <-> Post cycle)
+            user: { nonexistent: [] },
+          },
+        });
       };
     });
   });

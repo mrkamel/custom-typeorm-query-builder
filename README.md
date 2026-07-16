@@ -50,13 +50,7 @@ import { defineQueryBuilder } from 'custom-typeorm-query-builder';
 import { dataSource } from './dataSource';
 import { UserEntity } from './entities/UserEntity';
 
-export const UserRepository = dataSource.getRepository(UserEntity).extend({
-  qb(alias: string = 'users') {
-    return createUserQueryBuilder(alias);
-  },
-});
-
-const createUserQueryBuilder = defineQueryBuilder(UserRepository, {
+const createUserQueryBuilder = defineQueryBuilder(() => UserRepository, {
   named(name: string) {
     return this.where({ name });
   },
@@ -67,7 +61,19 @@ const createUserQueryBuilder = defineQueryBuilder(UserRepository, {
     return this.joinsAndSelects(['profile']);
   },
 });
+
+export const UserRepository = dataSource.getRepository(UserEntity).extend({
+  qb(alias: string = 'users') {
+    return createUserQueryBuilder(this, alias);
+  },
+});
 ```
+
+Passing `this` to the factory (rather than binding the repository at definition
+time) means the builder runs against the caller's repository — so a `qb()` invoked
+on a transaction-scoped repository keeps that transaction's `EntityManager`. The
+repository given to `defineQueryBuilder` is used only to infer the entity and the
+extension types.
 
 Now every `UserRepository.qb()` chain has the custom methods available alongside
 the built-ins, in any order:
@@ -85,16 +91,18 @@ const user = await UserRepository.qb().withProfile().getOneOrFail();
 user.profile.bio;
 ```
 
-`defineQueryBuilder` returns a factory that requires the alias to use, so pick the
-default in your `qb()` wrapper (as above) and let callers override it per query:
+`defineQueryBuilder` returns a factory that takes the repository to run against and
+the alias to use, so pick the default in your `qb()` wrapper (as above) and let
+callers override it per query:
 
 ```ts
 await UserRepository.qb('u').where('u.age >= :min', { min: 18 }).getMany();
 ```
 
-Defining the builder in the repository's module (as above) has no import cycle. If
-you split it into its own file, that file and the repository import each other —
-pass a thunk so the repository resolves lazily and load order stops mattering:
+The repository argument to `defineQueryBuilder` is never invoked at runtime — it
+exists only to infer the entity and extension types — so pass a thunk
+(`() => UserRepository`) whenever referencing the repository eagerly would be a
+problem, such as the forward reference above or a two-file import cycle:
 
 ```ts
 const createUserQueryBuilder = defineQueryBuilder(() => UserRepository, { /* ... */ });

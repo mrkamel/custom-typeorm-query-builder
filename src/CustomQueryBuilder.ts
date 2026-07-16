@@ -118,6 +118,9 @@ export type JoinsAndSelects<Entity, Spec extends JoinSpec<Entity>> = ApplyJoinsA
 type QueryBuilder<Entity extends ObjectLiteral, Projected extends boolean = false, Ext extends object = Record<never, never>> =
   Omit<CustomQueryBuilder<Entity, Projected, Ext>, Projected extends true ? 'getOne' | 'getMany' | 'getOneOrFail' | 'forEach' : never> & Ext;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyQueryBuilder = QueryBuilder<any, boolean>;
+
 export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends boolean = false, Ext extends object = Record<never, never>> {
   #repository: Repository<Entity>;
   #alias: string;
@@ -499,7 +502,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this as unknown as QueryBuilder<Entity, Projected, Ext>;
   }
 
-  #applySubSelect(subquery: QueryBuilder<Entity, boolean>, alias: string) {
+  #applySubSelect(subquery: AnyQueryBuilder, alias: string) {
     const rawSubQb = subquery.getRawQueryBuilder();
 
     const { newCondition, newParameters } = this.#rewriteParameters(
@@ -522,9 +525,9 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
 
   select(selection: string): QueryBuilder<Entity, true, Ext>;
   select(selection: string[]): QueryBuilder<Entity, true, Ext>;
-  select(subquery: QueryBuilder<Entity, boolean>, alias: string): QueryBuilder<Entity, true, Ext>;
+  select(subquery: AnyQueryBuilder, alias: string): QueryBuilder<Entity, true, Ext>;
   select(
-    selectionOrSubquery: string | string[] | QueryBuilder<Entity, boolean>,
+    selectionOrSubquery: string | string[] | AnyQueryBuilder,
     alias?: string,
   ): QueryBuilder<Entity, true, Ext> {
     if (Array.isArray(selectionOrSubquery)) return this.clone<Entity, true>().#applySelect(selectionOrSubquery);
@@ -707,17 +710,17 @@ type ForbidBuiltInNames<Entity extends ObjectLiteral> = {
   [K in keyof CustomQueryBuilder<Entity>]?: 'This extension name collides with a built-in query builder method';
 };
 
+export type QueryBuilderExtensions<Entity extends ObjectLiteral, Ext extends object> =
+  Ext & ThisType<QueryBuilder<Entity, false, Ext>> & ForbidBuiltInNames<Entity>;
+
 export function defineQueryBuilder<Entity extends ObjectLiteral, Ext extends object>(
-  repository: Repository<Entity> | (() => Repository<Entity>),
-  extensions: Ext & ThisType<QueryBuilder<Entity, false, Ext>> & ForbidBuiltInNames<Entity>,
-): (alias: string) => QueryBuilder<Entity, false, Ext> {
+  _repository: Repository<Entity> | (() => Repository<Entity>),
+  extensions: QueryBuilderExtensions<Entity, Ext>,
+): (repository: Repository<Entity>, alias: string) => QueryBuilder<Entity, false, Ext> {
   class ExtendedQueryBuilder extends CustomQueryBuilder<Entity, false, Ext> {}
 
   Object.assign(ExtendedQueryBuilder.prototype, extensions);
 
-  return (alias: string) => {
-    const repo = typeof repository === 'function' ? repository() : repository;
-
-    return new ExtendedQueryBuilder(repo, alias) as unknown as QueryBuilder<Entity, false, Ext>;
-  };
+  return (repository: Repository<Entity>, alias: string) =>
+    new ExtendedQueryBuilder(repository, alias) as unknown as QueryBuilder<Entity, false, Ext>;
 }

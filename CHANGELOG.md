@@ -8,8 +8,15 @@
   filter methods to a repository's builder. Each method runs with `this` bound to the
   builder and returns a builder that still carries the custom methods, so custom and
   built-in calls chain in any order. Extension names that collide with a built-in
-  method are rejected at compile time. Pass a thunk (`() => repository`) to break an
-  import cycle when the builder lives in its own module.
+  method are rejected at compile time. It returns a factory
+  `(repository, alias) => builder`; pass the live repository (e.g. `this` from a `qb()`
+  wrapper) so the builder keeps that repository's `EntityManager` — including inside a
+  transaction. The repository handed to `defineQueryBuilder` is used only to infer the
+  entity and extension types; pass a thunk (`() => repository`) to defer referencing it
+  through a forward reference or import cycle.
+- Exported type `QueryBuilderExtensions<Entity, Ext>` — the extensions-argument type of
+  `defineQueryBuilder`, for wrapping it in a base-repository helper that threads the
+  extensions into a shared `qb()`.
 
 ## 0.6.0
 

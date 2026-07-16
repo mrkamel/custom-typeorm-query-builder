@@ -870,6 +870,23 @@ describe('CustomQueryBuilder', () => {
       expect(Number(rows[0].oldCount)).toBe(2);
     });
 
+    it('embeds a correlated subquery over a different entity', async () => {
+      const alice = await createUser('alice', 30);
+      const bob = await createUser('bob', 40);
+
+      await PostRepository.save({ title: 'a1', published: true, user_id: alice.id });
+      await PostRepository.save({ title: 'a2', published: true, user_id: alice.id });
+      await PostRepository.save({ title: 'b1', published: true, user_id: bob.id });
+
+      const rows = await UserRepository.qb()
+        .select('users.name')
+        .select(PostRepository.qb().select('COUNT(*)').where('posts.user_id = users.id'), 'postCount')
+        .orderBy('users.name', 'ASC')
+        .getRawMany();
+
+      expect(rows.map((row) => Number(row.postCount))).toEqual([2, 1]);
+    });
+
     it('throws when called with a subquery but no alias', () => {
       const subquery = UserRepository.qb().select('COUNT(*)');
 
@@ -1201,27 +1218,17 @@ describe('CustomQueryBuilder', () => {
       expect(updated.age).toBe(35);
     });
   });
-});
 
-const createUserQueryBuilder = defineQueryBuilder(UserRepository, {
-  named(name: string) {
-    return this.where({ name });
-  },
-  adults() {
-    return this.where('users.age >= :min', { min: 18 });
-  },
-  withProfile() {
-    return this.joinsAndSelects(['profile']);
-  },
-  hasProfile() {
-    return this.joins(['profile']);
-  },
-});
+  describe('transaction context', () => {
+    it('preserves the transaction when qb() runs on a transaction-scoped repository', async () => {
+      await UserRepository.manager.transaction(async (manager) => {
+        const alice = await manager.withRepository(UserRepository).save({ name: 'alice', age: 30 });
+        const result = await manager.withRepository(UserRepository).qb().where({ id: alice.id }).getMany();
 
-const createPostQueryBuilder = defineQueryBuilder(() => PostRepository, {
-  authoredBy(name: string) {
-    return this.joins(['user']).where('user.name = :name', { name });
-  },
+        expect(result.map((user) => user.id)).toEqual([alice.id]);
+      });
+    });
+  });
 });
 
 describe('defineQueryBuilder', () => {
@@ -1229,7 +1236,7 @@ describe('defineQueryBuilder', () => {
     const alice = await createUser('alice', 30);
     await createUser('bob', 10);
 
-    const result = await createUserQueryBuilder('users').adults().getMany();
+    const result = await UserRepository.cqb().adults().getMany();
 
     expect(result.map((user) => user.id)).toEqual([alice.id]);
   });
@@ -1238,7 +1245,7 @@ describe('defineQueryBuilder', () => {
     const alice = await createUser('alice', 30);
     await createUser('alice', 10);
 
-    const result = await createUserQueryBuilder('users').where({ name: 'alice' }).adults().getMany();
+    const result = await UserRepository.cqb().where({ name: 'alice' }).adults().getMany();
 
     expect(result.map((user) => user.id)).toEqual([alice.id]);
   });
@@ -1247,7 +1254,7 @@ describe('defineQueryBuilder', () => {
     const alice = await createUser('alice', 30);
     await createUser('bob', 30);
 
-    const result = await createUserQueryBuilder('users').adults().where({ name: 'alice' }).getMany();
+    const result = await UserRepository.cqb().adults().where({ name: 'alice' }).getMany();
 
     expect(result.map((user) => user.id)).toEqual([alice.id]);
   });
@@ -1257,7 +1264,7 @@ describe('defineQueryBuilder', () => {
     await createUser('carol', 30);
     await createUser('alice', 10);
 
-    const result = await createUserQueryBuilder('users').adults().named('alice').getMany();
+    const result = await UserRepository.cqb().adults().named('alice').getMany();
 
     expect(result.map((user) => user.id)).toEqual([alice.id]);
   });
@@ -1265,7 +1272,7 @@ describe('defineQueryBuilder', () => {
   it('keeps each builder immutable', async () => {
     await createUser('alice', 30);
 
-    const base = createUserQueryBuilder('users').adults();
+    const base = UserRepository.cqb().adults();
     const named = base.named('bob');
 
     expect(await base.getCount()).toBe(1);
@@ -1276,7 +1283,7 @@ describe('defineQueryBuilder', () => {
     const alice = await createUser('alice', 30);
     await createUser('bob', 10);
 
-    const result = await createUserQueryBuilder('u')
+    const result = await UserRepository.cqb('u')
       .named('alice')
       .where('u.age >= :min', { min: 18 })
       .getMany();
@@ -1288,7 +1295,7 @@ describe('defineQueryBuilder', () => {
     const alice = await createUser('alice', 30);
     await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
 
-    const user = await createUserQueryBuilder('users').withProfile().where({ name: 'alice' }).getOneOrFail();
+    const user = await UserRepository.cqb().withProfile().where({ name: 'alice' }).getOneOrFail();
 
     expect(user.profile.bio).toBe('hello');
   });
@@ -1298,7 +1305,7 @@ describe('defineQueryBuilder', () => {
     await ProfileRepository.save({ bio: 'hello', user_id: alice.id });
     await createUser('bob', 30);
 
-    const result = await createUserQueryBuilder('users')
+    const result = await UserRepository.cqb()
       .hasProfile()
       .where('profile.bio = :bio', { bio: 'hello' })
       .adults()
@@ -1313,28 +1320,18 @@ describe('defineQueryBuilder', () => {
     await PostRepository.save({ title: 'a', user_id: alice.id });
     await PostRepository.save({ title: 'b', user_id: bob.id });
 
-    const result = await createPostQueryBuilder('posts').authoredBy('alice').getMany();
+    const result = await PostRepository.cqb().authoredBy('alice').getMany();
 
     expect(result.map((post) => post.title)).toEqual(['a']);
   });
 
-  it('resolves a thunk repository lazily', async () => {
-    let resolved = 0;
-    const createLazy = defineQueryBuilder(() => { resolved++; return UserRepository; }, {
-      adults() {
-        return this.where('users.age >= :min', { min: 18 });
-      },
+  it('runs against the repository passed to the factory, preserving its transaction context', async () => {
+    await UserRepository.manager.transaction(async (manager) => {
+      const alice = await manager.withRepository(UserRepository).save({ name: 'alice', age: 30 });
+      const result = await manager.withRepository(UserRepository).cqb().adults().getMany();
+
+      expect(result.map((user) => user.id)).toEqual([alice.id]);
     });
-
-    expect(resolved).toBe(0);
-
-    const alice = await createUser('alice', 30);
-    await createUser('bob', 10);
-
-    const result = await createLazy('users').adults().getMany();
-
-    expect(resolved).toBeGreaterThan(0);
-    expect(result.map((user) => user.id)).toEqual([alice.id]);
   });
 
   it('rejects an extension whose name collides with a built-in at compile time', () => {

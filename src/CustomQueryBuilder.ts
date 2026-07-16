@@ -68,11 +68,11 @@ type UnionToIntersection<Union> =
 // message under a cascade of TS2615 errors. 8 levels is far deeper than any realistic join spec.
 type DecrementingDepth = [never, 0, 1, 2, 3, 4, 5, 6, 7, 8];
 
-type JoinSpecItem<Entity, Depth extends number = 8> =
+type JoinSpecItem<Entity, Depth extends number = 9> =
   | RelationKey<Entity>
   | { [K in RelationKey<Entity>]?: JoinSpec<UnwrapRelation<Entity[K]>, DecrementingDepth[Depth]> };
 
-type JoinSpec<Entity, Depth extends number = 8> =
+type JoinSpec<Entity, Depth extends number = 9> =
   Depth extends 0 ? never :
   | readonly JoinSpecItem<Entity, Depth>[]
   | { [K in RelationKey<Entity>]?: JoinSpec<UnwrapRelation<Entity[K]>, DecrementingDepth[Depth]> };
@@ -192,6 +192,10 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return res;
   }
 
+  #extendedThis(): QueryBuilder<Entity, Projected, Ext> {
+    return this as unknown as QueryBuilder<Entity, Projected, Ext>;
+  }
+
   all() {
     return this.where({});
   }
@@ -228,7 +232,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
       });
     }
 
-    return this as unknown as QueryBuilder<Entity, Projected, Ext>;
+    return this.#extendedThis();
   }
 
   where(conditions: string | WhereObjectConditions<Entity>, parameters?: ObjectLiteral): QueryBuilder<Entity, Projected, Ext> {
@@ -263,7 +267,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
       });
     }
 
-    return this as unknown as QueryBuilder<Entity, Projected, Ext>;
+    return this.#extendedThis();
   }
 
   whereNot(conditions: string | WhereObjectConditions<Entity>, parameters?: ObjectLiteral): QueryBuilder<Entity, Projected, Ext> {
@@ -285,7 +289,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
       this.#qb[mode](relationPath, newAlias);
     }
 
-    return this as unknown as QueryBuilder<Entity, Projected, Ext>;
+    return this.#extendedThis();
   }
 
   leftJoinAndSelect<const Path extends readonly string[]>(
@@ -344,14 +348,14 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
         }
       });
 
-      return this as unknown as QueryBuilder<Entity, Projected, Ext>;
+      return this.#extendedThis();
     }
 
     const obj = spec as Record<string, unknown>;
 
     Object.keys(obj).forEach((relation) => this.#addJoinedRelation({ relation, nested: obj[relation], parentAlias, parentMetadata, mode }));
 
-    return this as unknown as QueryBuilder<Entity, Projected, Ext>;
+    return this.#extendedThis();
   }
 
   #addJoinedRelation(
@@ -455,7 +459,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
       });
     }
 
-    return this as unknown as QueryBuilder<Entity, Projected, Ext>;
+    return this.#extendedThis();
   }
 
   orderBy(sort: string, order?: 'ASC' | 'DESC'): QueryBuilder<Entity, Projected, Ext>;
@@ -470,7 +474,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
 
   #applyGroupBy(group: string) {
     this.#qb.addGroupBy(group);
-    return this as unknown as QueryBuilder<Entity, Projected, Ext>;
+    return this.#extendedThis();
   }
 
   groupBy(group: string): QueryBuilder<Entity, Projected, Ext> {
@@ -479,7 +483,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
 
   #applySkip(count: number) {
     this.#qb.skip(count);
-    return this as unknown as QueryBuilder<Entity, Projected, Ext>;
+    return this.#extendedThis();
   }
 
   skip(count: number): QueryBuilder<Entity, Projected, Ext> {
@@ -488,7 +492,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
 
   #applyTake(count: number) {
     this.#qb.take(count);
-    return this as unknown as QueryBuilder<Entity, Projected, Ext>;
+    return this.#extendedThis();
   }
 
   take(count: number): QueryBuilder<Entity, Projected, Ext> {
@@ -497,7 +501,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
 
   #applyLimit(count: number) {
     this.#qb.limit(count);
-    return this as unknown as QueryBuilder<Entity, Projected, Ext>;
+    return this.#extendedThis();
   }
 
   limit(count: number): QueryBuilder<Entity, Projected, Ext> {
@@ -513,7 +517,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
 
     this.#config.selects.push(...selection);
 
-    return this as unknown as QueryBuilder<Entity, Projected, Ext>;
+    return this.#extendedThis();
   }
 
   #applySubSelect(subquery: AnyQueryBuilder, alias: string) {
@@ -534,7 +538,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
 
     this.#config.selects.push(alias);
 
-    return this as unknown as QueryBuilder<Entity, Projected, Ext>;
+    return this.#extendedThis();
   }
 
   select(selection: string): QueryBuilder<Entity, true, Ext>;
@@ -640,7 +644,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
       this.#qb.setLock(lockMode);
     }
 
-    return this as unknown as QueryBuilder<Entity, Projected, Ext>;
+    return this.#extendedThis();
   }
 
   setLock(lockMode: 'optimistic' | 'pessimistic_read' | 'pessimistic_write' | 'dirty_read', lockVersion?: number | Date): QueryBuilder<Entity, Projected, Ext> {
@@ -692,7 +696,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
 
   #applyDistinct(distinct: boolean = true) {
     this.#qb.distinct(distinct);
-    return this as unknown as QueryBuilder<Entity, Projected, Ext>;
+    return this.#extendedThis();
   }
 
   distinct(distinct: boolean = true): QueryBuilder<Entity, Projected, Ext> {
@@ -766,7 +770,7 @@ export type SharedQueryBuilder<Shared extends object = Record<never, never>> =
 
 // Define reusable, entity-generic extensions once and spread them into any `defineQueryBuilder`.
 export function defineSharedQueryBuilder<Shared extends object>(
-  extensions: Shared & ThisType<SharedQueryBuilder<Shared>> & ForbidBuiltInNames<ObjectLiteral>,
+  extensions: QueryBuilderExtensions<ObjectLiteral, Shared>,
 ): Shared {
   return extensions;
 }

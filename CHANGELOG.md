@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.7.0
+
+### Added
+
+- `defineQueryBuilder(repository, extensions)` — attach reusable, chainable custom
+  filter methods to a repository's builder. Each method runs with `this` bound to the
+  builder and returns a builder that still carries the custom methods, so custom and
+  built-in calls chain in any order. Extension names that collide with a built-in
+  method are rejected at compile time. It returns a factory
+  `(repository, alias) => builder`; pass the live repository (e.g. `this` from a `qb()`
+  wrapper) so the builder keeps that repository's `EntityManager` — including inside a
+  transaction. The repository handed to `defineQueryBuilder` is used only to infer the
+  entity and extension types; pass a thunk (`() => repository`) to defer referencing it
+  through a forward reference or import cycle.
+- Exported type `QueryBuilderExtensions<Entity, Ext>` — the extensions-argument type of
+  `defineQueryBuilder`, for wrapping it in a base-repository helper that threads the
+  extensions into a shared `qb()`.
+- `defineSharedQueryBuilder(extensions)` — define entity-agnostic extension methods (e.g.
+  `paginate`) once and spread them into any `defineQueryBuilder`. A shared method can use
+  any built-in and call sibling shared methods; it never narrows relations, so it
+  preserves whatever the chain has already joined. Names that collide with a built-in are
+  rejected at compile time. Also exports the type `SharedQueryBuilder<Shared>`.
+
+### Fixed
+
+- An invalid relation name in a `joins`/`leftJoinsAndSelects`/`joinsAndSelects` spec now
+  reports a single "does not exist" error pointing at the offending key. On a cyclic entity
+  graph (A → B → A) the join-spec type previously expanded without bound, tripping
+  TypeScript's circular-mapped-type limiter and burying the real error under a cascade of
+  TS2615 messages; the spec's recursion is now depth-bounded (8 levels).
+
 ## 0.6.0
 
 ### Fixed

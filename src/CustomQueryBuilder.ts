@@ -1,4 +1,4 @@
-import type { ObjectLiteral, Repository, EntityMetadata } from 'typeorm';
+import type { ObjectLiteral, Repository, EntityMetadata, SelectQueryBuilder } from 'typeorm';
 
 export class CustomQueryBuilderError extends Error {}
 
@@ -62,13 +62,20 @@ type RelationKey<Entity> = {
 type UnionToIntersection<Union> =
   (Union extends unknown ? (k: Union) => void : never) extends (k: infer Intersection) => void ? Intersection : never;
 
-type JoinSpecItem<Entity> =
-  | RelationKey<Entity>
-  | { [K in RelationKey<Entity>]?: JoinSpec<UnwrapRelation<Entity[K]>> };
+// Bound the recursion depth so a cyclic entity graph (A → B → A) can't expand JoinSpec forever.
+// Without a bound, an invalid relation key forces TypeScript to expand the whole cycle to report
+// the error, which trips its circular-mapped-type limiter and buries the real "does not exist"
+// message under a cascade of TS2615 errors. 8 levels is far deeper than any realistic join spec.
+type DecrementingDepth = [never, 0, 1, 2, 3, 4, 5, 6, 7, 8];
 
-type JoinSpec<Entity> =
-  | readonly JoinSpecItem<Entity>[]
-  | { [K in RelationKey<Entity>]?: JoinSpec<UnwrapRelation<Entity[K]>> };
+type JoinSpecItem<Entity, Depth extends number = 9> =
+  | RelationKey<Entity>
+  | { [K in RelationKey<Entity>]?: JoinSpec<UnwrapRelation<Entity[K]>, DecrementingDepth[Depth]> };
+
+type JoinSpec<Entity, Depth extends number = 9> =
+  Depth extends 0 ? never :
+  | readonly JoinSpecItem<Entity, Depth>[]
+  | { [K in RelationKey<Entity>]?: JoinSpec<UnwrapRelation<Entity[K]>, DecrementingDepth[Depth]> };
 
 type ApplyLeftJoinsAndSelectsNested<Value, NestedSpec> =
   NonNullable<Value> extends (infer U)[]
@@ -115,33 +122,49 @@ type ApplyJoinsAndSelects<Entity, Spec> =
 export type LeftJoinsAndSelects<Entity, Spec extends JoinSpec<Entity>> = ApplyLeftJoinsAndSelects<Entity, Spec>;
 export type JoinsAndSelects<Entity, Spec extends JoinSpec<Entity>> = ApplyJoinsAndSelects<Entity, Spec>;
 
-type QueryBuilder<Entity extends ObjectLiteral, Projected extends boolean = false> =
-  Omit<CustomQueryBuilder<Entity, Projected>, Projected extends true ? 'getOne' | 'getMany' | 'getOneOrFail' | 'forEach' : never>;
+type QueryBuilder<Entity extends ObjectLiteral, Projected extends boolean = false, Ext extends object = Record<never, never>> =
+  Omit<CustomQueryBuilder<Entity, Projected, Ext>, Projected extends true ? 'getOne' | 'getMany' | 'getOneOrFail' | 'forEach' : never> & Ext;
 
-export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends boolean = false> {
-  private qb = this.repository.createQueryBuilder(this.alias);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyQueryBuilder = QueryBuilder<any, boolean>;
 
-  private config = {
+// Module-private phantom key. It carries the builder's entity and projection through the
+// `Omit<...> & Ext` alias so custom extensions can recover both from `this` (see
+// PolymorphicExtensions). Not exported, so it never appears in a consumer-facing type.
+declare const ENTITY_BRAND: unique symbol;
+
+export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends boolean = false, Ext extends object = Record<never, never>> {
+  declare readonly [ENTITY_BRAND]?: { entity: Entity, projected: Projected };
+
+  #repository: Repository<Entity>;
+  #alias: string;
+  #qb: SelectQueryBuilder<Entity>;
+
+  #config = {
     parameterCount: 0,
     selects: [] as string[],
   };
 
-  constructor(private repository: Repository<Entity>, private alias: string) {}
-
-  private quoteColumnName(column: string) {
-    return this.repository.manager.connection.driver.escape(column);
+  constructor(repository: Repository<Entity>, alias: string) {
+    this.#repository = repository;
+    this.#alias = alias;
+    this.#qb = repository.createQueryBuilder(alias);
   }
 
-  private incrementParameter() {
-    return `__param${this.config.parameterCount++}`;
+  #quoteColumnName(column: string) {
+    return this.#repository.manager.connection.driver.escape(column);
   }
 
-  private rewriteParameters(condition: string, parameters: ObjectLiteral) {
+  #incrementParameter() {
+    return `__param${this.#config.parameterCount++}`;
+  }
+
+  #rewriteParameters(condition: string, parameters: ObjectLiteral) {
     let newCondition = condition;
     const newParameters: ObjectLiteral = {};
 
     Object.keys(parameters || {}).forEach((key) => {
-      const param = this.incrementParameter();
+      const param = this.#incrementParameter();
       const escapedKey = key.replace(/[^A-Za-z0-9_]/g, '\\$&');
 
       newCondition = newCondition.replace(new RegExp(`(?<!:):(\\.\\.\\.)?${escapedKey}\\b`, 'g'), `:$1${param}`);
@@ -152,20 +175,25 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
   }
 
   getRawQueryBuilder() {
-    return this.qb.clone();
+    return this.#qb.clone();
   }
 
-  clone<NewEntity extends ObjectLiteral = Entity, NewProjected extends boolean = Projected>(): CustomQueryBuilder<NewEntity, NewProjected> {
-    const res = new CustomQueryBuilder<NewEntity, NewProjected>(this.repository as unknown as Repository<NewEntity>, this.alias);
+  clone<NewEntity extends ObjectLiteral = Entity, NewProjected extends boolean = Projected>(): CustomQueryBuilder<NewEntity, NewProjected, Ext> {
+    const QueryBuilderClass = this.constructor as new (repository: Repository<NewEntity>, alias: string) => CustomQueryBuilder<NewEntity, NewProjected, Ext>;
+    const res = new QueryBuilderClass(this.#repository as unknown as Repository<NewEntity>, this.#alias);
 
-    res.qb = this.qb.clone() as unknown as typeof res.qb;
+    res.#qb = this.#qb.clone() as unknown as SelectQueryBuilder<NewEntity>;
 
-    res.config = {
-      parameterCount: this.config.parameterCount,
-      selects: [...this.config.selects],
+    res.#config = {
+      parameterCount: this.#config.parameterCount,
+      selects: [...this.#config.selects],
     };
 
     return res;
+  }
+
+  #extendedThis(): QueryBuilder<Entity, Projected, Ext> {
+    return this as unknown as QueryBuilder<Entity, Projected, Ext>;
   }
 
   all() {
@@ -176,77 +204,77 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this.where('1 = 0');
   }
 
-  private applyWhere(conditions: string | WhereObjectConditions<Entity>, parameters?: ObjectLiteral) {
+  #applyWhere(conditions: string | WhereObjectConditions<Entity>, parameters?: ObjectLiteral) {
     if (typeof conditions === 'string') {
-      const { newCondition, newParameters } = this.rewriteParameters(conditions, parameters || {});
+      const { newCondition, newParameters } = this.#rewriteParameters(conditions, parameters || {});
 
-      this.qb.andWhere(`(${newCondition})`, newParameters);
+      this.#qb.andWhere(`(${newCondition})`, newParameters);
     } else {
       const conditionsObject = conditions as ObjectLiteral;
 
       Object.keys(conditionsObject).forEach((key) => {
         const value = conditionsObject[key];
-        const column = `${this.quoteColumnName(this.alias)}.${this.quoteColumnName(key)}`;
+        const column = `${this.#quoteColumnName(this.#alias)}.${this.#quoteColumnName(key)}`;
 
         if (value === null) {
-          this.qb.andWhere(`(${column} IS NULL)`);
+          this.#qb.andWhere(`(${column} IS NULL)`);
         } else if (Array.isArray(value)) {
           if (value.length === 0) {
-            this.qb.andWhere('(1 = 0)');
+            this.#qb.andWhere('(1 = 0)');
           } else {
-            const param = this.incrementParameter();
-            this.qb.andWhere(`(${column} IN (:...${param}))`, { [param]: value });
+            const param = this.#incrementParameter();
+            this.#qb.andWhere(`(${column} IN (:...${param}))`, { [param]: value });
           }
         } else {
-          const param = this.incrementParameter();
-          this.qb.andWhere(`(${column} = :${param})`, { [param]: value });
+          const param = this.#incrementParameter();
+          this.#qb.andWhere(`(${column} = :${param})`, { [param]: value });
         }
       });
     }
 
-    return this;
+    return this.#extendedThis();
   }
 
-  where(conditions: string | WhereObjectConditions<Entity>, parameters?: ObjectLiteral): QueryBuilder<Entity, Projected> {
-    return this.clone().applyWhere(conditions, parameters);
+  where(conditions: string | WhereObjectConditions<Entity>, parameters?: ObjectLiteral): QueryBuilder<Entity, Projected, Ext> {
+    return this.clone().#applyWhere(conditions, parameters);
   }
 
-  private applyWhereNot(conditions: string | WhereObjectConditions<Entity>, parameters?: ObjectLiteral) {
+  #applyWhereNot(conditions: string | WhereObjectConditions<Entity>, parameters?: ObjectLiteral) {
     if (typeof conditions === 'string') {
-      const { newCondition, newParameters } = this.rewriteParameters(conditions, parameters || {});
+      const { newCondition, newParameters } = this.#rewriteParameters(conditions, parameters || {});
 
-      this.qb.andWhere(`NOT (${newCondition})`, newParameters);
+      this.#qb.andWhere(`NOT (${newCondition})`, newParameters);
     } else {
       const conditionsObject = conditions as ObjectLiteral;
 
       Object.keys(conditionsObject).forEach((key) => {
         const value = conditionsObject[key];
-        const column = `${this.quoteColumnName(this.alias)}.${this.quoteColumnName(key)}`;
+        const column = `${this.#quoteColumnName(this.#alias)}.${this.#quoteColumnName(key)}`;
 
         if (value === null) {
-          this.qb.andWhere(`(${column} IS NOT NULL)`);
+          this.#qb.andWhere(`(${column} IS NOT NULL)`);
         } else if (Array.isArray(value)) {
           if (value.length === 0) {
-            this.qb.andWhere('(1 = 1)');
+            this.#qb.andWhere('(1 = 1)');
           } else {
-            const param = this.incrementParameter();
-            this.qb.andWhere(`(${column} NOT IN (:...${param}))`, { [param]: value });
+            const param = this.#incrementParameter();
+            this.#qb.andWhere(`(${column} NOT IN (:...${param}))`, { [param]: value });
           }
         } else {
-          const param = this.incrementParameter();
-          this.qb.andWhere(`(${column} != :${param})`, { [param]: value });
+          const param = this.#incrementParameter();
+          this.#qb.andWhere(`(${column} != :${param})`, { [param]: value });
         }
       });
     }
 
-    return this;
+    return this.#extendedThis();
   }
 
-  whereNot(conditions: string | WhereObjectConditions<Entity>, parameters?: ObjectLiteral): QueryBuilder<Entity, Projected> {
-    return this.clone().applyWhereNot(conditions, parameters);
+  whereNot(conditions: string | WhereObjectConditions<Entity>, parameters?: ObjectLiteral): QueryBuilder<Entity, Projected, Ext> {
+    return this.clone().#applyWhereNot(conditions, parameters);
   }
 
-  private applyJoin(
+  #applyJoin(
     mode: 'leftJoinAndSelect' | 'leftJoin' | 'innerJoinAndSelect' | 'innerJoin',
     relationPath: string,
     newAlias: string,
@@ -254,14 +282,14 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     parameters?: ObjectLiteral,
   ) {
     if (condition) {
-      const { newCondition, newParameters } = this.rewriteParameters(condition, parameters || {});
+      const { newCondition, newParameters } = this.#rewriteParameters(condition, parameters || {});
 
-      this.qb[mode](relationPath, newAlias, newCondition, newParameters);
+      this.#qb[mode](relationPath, newAlias, newCondition, newParameters);
     } else {
-      this.qb[mode](relationPath, newAlias);
+      this.#qb[mode](relationPath, newAlias);
     }
 
-    return this;
+    return this.#extendedThis();
   }
 
   leftJoinAndSelect<const Path extends readonly string[]>(
@@ -269,8 +297,8 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     newAlias: string,
     condition?: string,
     parameters?: ObjectLiteral,
-  ): QueryBuilder<ApplyPathLeft<Entity, Path>, Projected> {
-    return this.clone<ApplyPathLeft<Entity, Path>>().applyJoin('leftJoinAndSelect', relationPath, newAlias, condition, parameters);
+  ): QueryBuilder<ApplyPathLeft<Entity, Path>, Projected, Ext> {
+    return this.clone<ApplyPathLeft<Entity, Path>>().#applyJoin('leftJoinAndSelect', relationPath, newAlias, condition, parameters);
   }
 
   leftJoin<const Path extends readonly string[]>(
@@ -278,8 +306,8 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     newAlias: string,
     condition?: string,
     parameters?: ObjectLiteral,
-  ): QueryBuilder<Entity, Projected> {
-    return this.clone().applyJoin('leftJoin', relationPath, newAlias, condition, parameters);
+  ): QueryBuilder<Entity, Projected, Ext> {
+    return this.clone().#applyJoin('leftJoin', relationPath, newAlias, condition, parameters);
   }
 
   innerJoinAndSelect<const Path extends readonly string[]>(
@@ -287,8 +315,8 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     newAlias: string,
     condition?: string,
     parameters?: ObjectLiteral,
-  ): QueryBuilder<ApplyPathInner<Entity, Path>, Projected> {
-    return this.clone<ApplyPathInner<Entity, Path>>().applyJoin('innerJoinAndSelect', relationPath, newAlias, condition, parameters);
+  ): QueryBuilder<ApplyPathInner<Entity, Path>, Projected, Ext> {
+    return this.clone<ApplyPathInner<Entity, Path>>().#applyJoin('innerJoinAndSelect', relationPath, newAlias, condition, parameters);
   }
 
   innerJoin<const Path extends readonly string[]>(
@@ -296,11 +324,11 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     newAlias: string,
     condition?: string,
     parameters?: ObjectLiteral,
-  ): QueryBuilder<Entity, Projected> {
-    return this.clone().applyJoin('innerJoin', relationPath, newAlias, condition, parameters);
+  ): QueryBuilder<Entity, Projected, Ext> {
+    return this.clone().#applyJoin('innerJoin', relationPath, newAlias, condition, parameters);
   }
 
-  private applyRelationSpec(
+  #applyRelationSpec(
     { spec, parentAlias, parentMetadata, mode }:
     {
       spec: Record<string, unknown> | readonly (string | Record<string, unknown>)[],
@@ -312,25 +340,25 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     if (Array.isArray(spec)) {
       spec.forEach((item) => {
         if (typeof item === 'string') {
-          this.addJoinedRelation({ relation: item, nested: undefined, parentAlias, parentMetadata, mode });
+          this.#addJoinedRelation({ relation: item, nested: undefined, parentAlias, parentMetadata, mode });
         } else {
           const nestedObj = item as Record<string, unknown>;
 
-          Object.keys(nestedObj).forEach((relation) => this.addJoinedRelation({ relation, nested: nestedObj[relation], parentAlias, parentMetadata, mode }));
+          Object.keys(nestedObj).forEach((relation) => this.#addJoinedRelation({ relation, nested: nestedObj[relation], parentAlias, parentMetadata, mode }));
         }
       });
 
-      return this;
+      return this.#extendedThis();
     }
 
     const obj = spec as Record<string, unknown>;
 
-    Object.keys(obj).forEach((relation) => this.addJoinedRelation({ relation, nested: obj[relation], parentAlias, parentMetadata, mode }));
+    Object.keys(obj).forEach((relation) => this.#addJoinedRelation({ relation, nested: obj[relation], parentAlias, parentMetadata, mode }));
 
-    return this;
+    return this.#extendedThis();
   }
 
-  private addJoinedRelation(
+  #addJoinedRelation(
     { relation, nested, parentAlias, parentMetadata, mode }:
     {
       relation: string,
@@ -352,10 +380,10 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
 
     const newAlias = relationMetadata.propertyName;
 
-    this.qb[mode](`${parentAlias}.${relation}`, newAlias);
+    this.#qb[mode](`${parentAlias}.${relation}`, newAlias);
 
     if (nested) {
-      this.applyRelationSpec({
+      this.#applyRelationSpec({
         spec: nested as Record<string, unknown> | readonly (string | Record<string, unknown>)[],
         parentAlias: newAlias,
         parentMetadata: relationMetadata.inverseEntityMetadata,
@@ -364,223 +392,223 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     }
   }
 
-  leftJoinsAndSelects<const Spec extends JoinSpec<Entity>>(spec: Spec): QueryBuilder<ApplyLeftJoinsAndSelects<Entity, Spec>, Projected> {
+  leftJoinsAndSelects<const Spec extends JoinSpec<Entity>>(spec: Spec): QueryBuilder<ApplyLeftJoinsAndSelects<Entity, Spec>, Projected, Ext> {
     const res = this.clone<ApplyLeftJoinsAndSelects<Entity, Spec>>();
 
-    return res.applyRelationSpec({
+    return res.#applyRelationSpec({
       spec: spec as Record<string, unknown> | readonly (string | Record<string, unknown>)[],
-      parentAlias: res.alias,
-      parentMetadata: res.repository.metadata,
+      parentAlias: res.#alias,
+      parentMetadata: res.#repository.metadata,
       mode: 'leftJoinAndSelect',
-    }) as unknown as QueryBuilder<ApplyLeftJoinsAndSelects<Entity, Spec>, Projected>;
+    }) as unknown as QueryBuilder<ApplyLeftJoinsAndSelects<Entity, Spec>, Projected, Ext>;
   }
 
-  joinsAndSelects<const Spec extends JoinSpec<Entity>>(spec: Spec): QueryBuilder<ApplyJoinsAndSelects<Entity, Spec>, Projected> {
+  joinsAndSelects<const Spec extends JoinSpec<Entity>>(spec: Spec): QueryBuilder<ApplyJoinsAndSelects<Entity, Spec>, Projected, Ext> {
     const res = this.clone<ApplyJoinsAndSelects<Entity, Spec>>();
 
-    return res.applyRelationSpec({
+    return res.#applyRelationSpec({
       spec: spec as Record<string, unknown> | readonly (string | Record<string, unknown>)[],
-      parentAlias: res.alias,
-      parentMetadata: res.repository.metadata,
+      parentAlias: res.#alias,
+      parentMetadata: res.#repository.metadata,
       mode: 'innerJoinAndSelect',
-    }) as unknown as QueryBuilder<ApplyJoinsAndSelects<Entity, Spec>, Projected>;
+    }) as unknown as QueryBuilder<ApplyJoinsAndSelects<Entity, Spec>, Projected, Ext>;
   }
 
-  joins<const Spec extends JoinSpec<Entity>>(spec: Spec): QueryBuilder<Entity, Projected> {
+  joins<const Spec extends JoinSpec<Entity>>(spec: Spec): QueryBuilder<Entity, Projected, Ext> {
     const res = this.clone();
 
-    return res.applyRelationSpec({
+    return res.#applyRelationSpec({
       spec: spec as Record<string, unknown> | readonly (string | Record<string, unknown>)[],
-      parentAlias: res.alias,
-      parentMetadata: res.repository.metadata,
+      parentAlias: res.#alias,
+      parentMetadata: res.#repository.metadata,
       mode: 'innerJoin',
     });
   }
 
-  leftJoins<const Spec extends JoinSpec<Entity>>(spec: Spec): QueryBuilder<Entity, Projected> {
+  leftJoins<const Spec extends JoinSpec<Entity>>(spec: Spec): QueryBuilder<Entity, Projected, Ext> {
     const res = this.clone();
 
-    return res.applyRelationSpec({
+    return res.#applyRelationSpec({
       spec: spec as Record<string, unknown> | readonly (string | Record<string, unknown>)[],
-      parentAlias: res.alias,
-      parentMetadata: res.repository.metadata,
+      parentAlias: res.#alias,
+      parentMetadata: res.#repository.metadata,
       mode: 'leftJoin',
     });
   }
 
-  private applyOrderBy(
+  #applyOrderBy(
     sort: string | { [Key in keyof Entity]?: 'ASC' | 'DESC' },
     orderOrParameters?: 'ASC' | 'DESC' | ObjectLiteral,
   ) {
     if (typeof sort === 'string' && typeof orderOrParameters === 'string') {
-      this.qb.addOrderBy(sort, orderOrParameters);
+      this.#qb.addOrderBy(sort, orderOrParameters);
     } else if (typeof sort === 'string' && typeof orderOrParameters === 'object') {
       const match = sort.match(/\s+(ASC|DESC)\s*$/i);
       const finalSort = match ? sort.slice(0, match.index) : sort;
       const order = match ? (match[1].toUpperCase() as 'ASC' | 'DESC') : undefined;
-      const { newCondition, newParameters } = this.rewriteParameters(finalSort, orderOrParameters);
+      const { newCondition, newParameters } = this.#rewriteParameters(finalSort, orderOrParameters);
 
-      this.qb.setParameters(newParameters);
-      this.qb.addOrderBy(newCondition, order);
+      this.#qb.setParameters(newParameters);
+      this.#qb.addOrderBy(newCondition, order);
     } else if (typeof sort === 'string') {
-      this.qb.addOrderBy(sort);
+      this.#qb.addOrderBy(sort);
     } else {
       Object.keys(sort).forEach((key) => {
         // TypeORM's take + *-to-many pagination forces us to pass it without quoting.
-        this.qb.addOrderBy(`${this.alias}.${key}`, (sort as Record<string, 'ASC' | 'DESC'>)[key]);
+        this.#qb.addOrderBy(`${this.#alias}.${key}`, (sort as Record<string, 'ASC' | 'DESC'>)[key]);
       });
     }
 
-    return this;
+    return this.#extendedThis();
   }
 
-  orderBy(sort: string, order?: 'ASC' | 'DESC'): QueryBuilder<Entity, Projected>;
-  orderBy(sort: string, parameters: ObjectLiteral): QueryBuilder<Entity, Projected>;
-  orderBy(sort: { [Key in keyof Entity]?: 'ASC' | 'DESC' }): QueryBuilder<Entity, Projected>;
+  orderBy(sort: string, order?: 'ASC' | 'DESC'): QueryBuilder<Entity, Projected, Ext>;
+  orderBy(sort: string, parameters: ObjectLiteral): QueryBuilder<Entity, Projected, Ext>;
+  orderBy(sort: { [Key in keyof Entity]?: 'ASC' | 'DESC' }): QueryBuilder<Entity, Projected, Ext>;
   orderBy(
     sort: string | { [Key in keyof Entity]?: 'ASC' | 'DESC' },
     orderOrParameters?: 'ASC' | 'DESC' | ObjectLiteral,
-  ): QueryBuilder<Entity, Projected> {
-    return this.clone().applyOrderBy(sort, orderOrParameters);
+  ): QueryBuilder<Entity, Projected, Ext> {
+    return this.clone().#applyOrderBy(sort, orderOrParameters);
   }
 
-  private applyGroupBy(group: string) {
-    this.qb.addGroupBy(group);
-    return this;
+  #applyGroupBy(group: string) {
+    this.#qb.addGroupBy(group);
+    return this.#extendedThis();
   }
 
-  groupBy(group: string): QueryBuilder<Entity, Projected> {
-    return this.clone().applyGroupBy(group);
+  groupBy(group: string): QueryBuilder<Entity, Projected, Ext> {
+    return this.clone().#applyGroupBy(group);
   }
 
-  private applySkip(count: number) {
-    this.qb.skip(count);
-    return this;
+  #applySkip(count: number) {
+    this.#qb.skip(count);
+    return this.#extendedThis();
   }
 
-  skip(count: number): QueryBuilder<Entity, Projected> {
-    return this.clone().applySkip(count);
+  skip(count: number): QueryBuilder<Entity, Projected, Ext> {
+    return this.clone().#applySkip(count);
   }
 
-  private applyTake(count: number) {
-    this.qb.take(count);
-    return this;
+  #applyTake(count: number) {
+    this.#qb.take(count);
+    return this.#extendedThis();
   }
 
-  take(count: number): QueryBuilder<Entity, Projected> {
-    return this.clone().applyTake(count);
+  take(count: number): QueryBuilder<Entity, Projected, Ext> {
+    return this.clone().#applyTake(count);
   }
 
-  private applyLimit(count: number) {
-    this.qb.limit(count);
-    return this;
+  #applyLimit(count: number) {
+    this.#qb.limit(count);
+    return this.#extendedThis();
   }
 
-  limit(count: number): QueryBuilder<Entity, Projected> {
-    return this.clone().applyLimit(count);
+  limit(count: number): QueryBuilder<Entity, Projected, Ext> {
+    return this.clone().#applyLimit(count);
   }
 
-  private applySelect(selection: string[]) {
-    if (this.config.selects.length > 0) {
-      this.qb.addSelect(selection);
+  #applySelect(selection: string[]) {
+    if (this.#config.selects.length > 0) {
+      this.#qb.addSelect(selection);
     } else {
-      this.qb.select(selection);
+      this.#qb.select(selection);
     }
 
-    this.config.selects.push(...selection);
+    this.#config.selects.push(...selection);
 
-    return this;
+    return this.#extendedThis();
   }
 
-  private applySubSelect(subquery: QueryBuilder<Entity, boolean>, alias: string) {
+  #applySubSelect(subquery: AnyQueryBuilder, alias: string) {
     const rawSubQb = subquery.getRawQueryBuilder();
 
-    const { newCondition, newParameters } = this.rewriteParameters(
+    const { newCondition, newParameters } = this.#rewriteParameters(
       rawSubQb.getQuery(),
       rawSubQb.getParameters(),
     );
 
-    if (this.config.selects.length > 0) {
-      this.qb.addSelect(`(${newCondition})`, alias);
+    if (this.#config.selects.length > 0) {
+      this.#qb.addSelect(`(${newCondition})`, alias);
     } else {
-      this.qb.select(`(${newCondition})`, alias);
+      this.#qb.select(`(${newCondition})`, alias);
     }
 
-    this.qb.setParameters(newParameters);
+    this.#qb.setParameters(newParameters);
 
-    this.config.selects.push(alias);
+    this.#config.selects.push(alias);
 
-    return this;
+    return this.#extendedThis();
   }
 
-  select(selection: string): QueryBuilder<Entity, true>;
-  select(selection: string[]): QueryBuilder<Entity, true>;
-  select(subquery: QueryBuilder<Entity, boolean>, alias: string): QueryBuilder<Entity, true>;
+  select(selection: string): QueryBuilder<Entity, true, Ext>;
+  select(selection: string[]): QueryBuilder<Entity, true, Ext>;
+  select(subquery: AnyQueryBuilder, alias: string): QueryBuilder<Entity, true, Ext>;
   select(
-    selectionOrSubquery: string | string[] | QueryBuilder<Entity, boolean>,
+    selectionOrSubquery: string | string[] | AnyQueryBuilder,
     alias?: string,
-  ): QueryBuilder<Entity, true> {
-    if (Array.isArray(selectionOrSubquery)) return this.clone<Entity, true>().applySelect(selectionOrSubquery);
-    if (typeof selectionOrSubquery === 'string') return this.clone<Entity, true>().applySelect([selectionOrSubquery]);
+  ): QueryBuilder<Entity, true, Ext> {
+    if (Array.isArray(selectionOrSubquery)) return this.clone<Entity, true>().#applySelect(selectionOrSubquery);
+    if (typeof selectionOrSubquery === 'string') return this.clone<Entity, true>().#applySelect([selectionOrSubquery]);
 
     if (!alias) throw new CustomQueryBuilderError('Alias must be provided when selecting a subquery');
 
-    return this.clone<Entity, true>().applySubSelect(selectionOrSubquery, alias);
+    return this.clone<Entity, true>().#applySubSelect(selectionOrSubquery, alias);
   }
 
   getOne() {
-    if (this.config.selects.length > 0) throw new CustomQueryBuilderError('getOne cannot be used after select');
+    if (this.#config.selects.length > 0) throw new CustomQueryBuilderError('getOne cannot be used after select');
 
-    return this.qb.getOne();
+    return this.#qb.getOne();
   }
 
   getOneOrFail() {
-    if (this.config.selects.length > 0) throw new CustomQueryBuilderError('getOneOrFail cannot be used after select');
+    if (this.#config.selects.length > 0) throw new CustomQueryBuilderError('getOneOrFail cannot be used after select');
 
-    return this.qb.getOneOrFail();
+    return this.#qb.getOneOrFail();
   }
 
   getMany() {
-    if (this.config.selects.length > 0) throw new CustomQueryBuilderError('getMany cannot be used after select');
+    if (this.#config.selects.length > 0) throw new CustomQueryBuilderError('getMany cannot be used after select');
 
-    return this.qb.getMany();
+    return this.#qb.getMany();
   }
 
   getCount() {
-    return this.qb.getCount();
+    return this.#qb.getCount();
   }
 
   getManyAndCount() {
-    return this.qb.getManyAndCount();
+    return this.#qb.getManyAndCount();
   }
 
   forEach(options: { batchSize?: number } = {}): AsyncIterable<Entity, void, undefined> {
     return {
-      [Symbol.asyncIterator]: (): AsyncIterator<Entity, void, undefined> => this.iterateBatches(options),
+      [Symbol.asyncIterator]: (): AsyncIterator<Entity, void, undefined> => this.#iterateBatches(options),
     };
   }
 
-  private async *iterateBatches(options: { batchSize?: number }): AsyncGenerator<Entity, void, undefined> {
-    if (this.config.selects.length > 0) throw new CustomQueryBuilderError('forEach cannot be used after select');
+  async *#iterateBatches(options: { batchSize?: number }): AsyncGenerator<Entity, void, undefined> {
+    if (this.#config.selects.length > 0) throw new CustomQueryBuilderError('forEach cannot be used after select');
 
     const batchSize = options.batchSize ?? 1000;
-    const primaryColumns = this.repository.metadata.primaryColumns;
+    const primaryColumns = this.#repository.metadata.primaryColumns;
 
     if (primaryColumns.length === 0) {
-      throw new CustomQueryBuilderError(`Cannot iterate ${this.repository.metadata.name}: no primary key`);
+      throw new CustomQueryBuilderError(`Cannot iterate ${this.#repository.metadata.name}: no primary key`);
     }
 
-    const columnList = primaryColumns.map((col) => `${this.alias}.${col.propertyName}`).join(', ');
+    const columnList = primaryColumns.map((col) => `${this.#alias}.${col.propertyName}`).join(', ');
     let cursor: unknown[] | undefined;
 
     while (true) {
       const batch = this.clone();
 
-      batch.qb.skip().take().limit(); // Remove any prior skip/take/limit
+      batch.#qb.skip().take().limit(); // Remove any prior skip/take/limit
 
       // First call replaces any prior limit and orderBy; subsequent calls append.
-      batch.qb.orderBy(`${this.alias}.${primaryColumns[0].propertyName}`, 'ASC');
-      primaryColumns.slice(1).forEach((col) => batch.qb.addOrderBy(`${this.alias}.${col.propertyName}`, 'ASC'));
+      batch.#qb.orderBy(`${this.#alias}.${primaryColumns[0].propertyName}`, 'ASC');
+      primaryColumns.slice(1).forEach((col) => batch.#qb.addOrderBy(`${this.#alias}.${col.propertyName}`, 'ASC'));
 
       if (cursor) {
         const placeholders = primaryColumns.map((col) => `:_pk_${col.propertyName}`).join(', ');
@@ -588,14 +616,14 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
 
         primaryColumns.forEach((col, index) => { parameters[`_pk_${col.propertyName}`] = cursor![index]; });
 
-        const { newCondition, newParameters } = batch.rewriteParameters(`(${columnList}) > (${placeholders})`, parameters);
+        const { newCondition, newParameters } = batch.#rewriteParameters(`(${columnList}) > (${placeholders})`, parameters);
 
-        batch.qb.andWhere(`(${newCondition})`, newParameters);
+        batch.#qb.andWhere(`(${newCondition})`, newParameters);
       }
 
-      batch.qb.take(batchSize);
+      batch.#qb.take(batchSize);
 
-      const rows = await batch.qb.getMany();
+      const rows = await batch.#qb.getMany();
 
       for (const row of rows) yield row;
 
@@ -607,31 +635,31 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     }
   }
 
-  private applySetLock(lockMode: 'optimistic' | 'pessimistic_read' | 'pessimistic_write' | 'dirty_read', lockVersion?: number | Date) {
+  #applySetLock(lockMode: 'optimistic' | 'pessimistic_read' | 'pessimistic_write' | 'dirty_read', lockVersion?: number | Date) {
     if (lockMode === 'optimistic') {
       if (lockVersion === undefined) throw new Error('Lock version must be provided for optimistic locking');
 
-      this.qb.setLock(lockMode, lockVersion);
+      this.#qb.setLock(lockMode, lockVersion);
     } else {
-      this.qb.setLock(lockMode);
+      this.#qb.setLock(lockMode);
     }
 
-    return this;
+    return this.#extendedThis();
   }
 
-  setLock(lockMode: 'optimistic' | 'pessimistic_read' | 'pessimistic_write' | 'dirty_read', lockVersion?: number | Date): QueryBuilder<Entity, Projected> {
-    return this.clone().applySetLock(lockMode, lockVersion);
+  setLock(lockMode: 'optimistic' | 'pessimistic_read' | 'pessimistic_write' | 'dirty_read', lockVersion?: number | Date): QueryBuilder<Entity, Projected, Ext> {
+    return this.clone().#applySetLock(lockMode, lockVersion);
   }
 
   delete() {
-    return this.qb.clone().delete().execute();
+    return this.#qb.clone().delete().execute();
   }
 
-  private applyUpdate(updates: { [Key in keyof Entity]?: Entity[Key] | (() => string) }, parameters?: ObjectLiteral) {
-    const updateQb = this.qb.update();
+  #applyUpdate(updates: { [Key in keyof Entity]?: Entity[Key] | (() => string) }, parameters?: ObjectLiteral) {
+    const updateQb = this.#qb.update();
 
     const parameterNameMap = Object.keys(parameters || {}).reduce((acc, cur) => {
-      acc[cur] = this.incrementParameter();
+      acc[cur] = this.#incrementParameter();
       return acc;
     }, {} as Record<string, string>);
 
@@ -663,35 +691,80 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
   }
 
   update(updates: { [Key in keyof Entity]?: Entity[Key] | (() => string) }, parameters?: ObjectLiteral) {
-    return this.clone().applyUpdate(updates, parameters);
+    return this.clone().#applyUpdate(updates, parameters);
   }
 
-  private applyDistinct(distinct: boolean = true) {
-    this.qb.distinct(distinct);
-    return this;
+  #applyDistinct(distinct: boolean = true) {
+    this.#qb.distinct(distinct);
+    return this.#extendedThis();
   }
 
-  distinct(distinct: boolean = true): QueryBuilder<Entity, Projected> {
-    return this.clone().applyDistinct(distinct);
+  distinct(distinct: boolean = true): QueryBuilder<Entity, Projected, Ext> {
+    return this.clone().#applyDistinct(distinct);
   }
 
   getSql() {
-    return this.qb.getSql();
+    return this.#qb.getSql();
   }
 
   getExists() {
-    return this.qb.getExists();
+    return this.#qb.getExists();
   }
 
   async getExistsNot() {
-    return !(await this.qb.getExists());
+    return !(await this.#qb.getExists());
   }
 
   getRawOne() {
-    return this.qb.getRawOne();
+    return this.#qb.getRawOne();
   }
 
   getRawMany() {
-    return this.qb.getRawMany();
+    return this.#qb.getRawMany();
   }
+}
+
+type ForbidBuiltInNames<Entity extends ObjectLiteral> = {
+  [K in keyof CustomQueryBuilder<Entity>]?: 'This extension name collides with a built-in query builder method';
+};
+
+export type QueryBuilderExtensions<Entity extends ObjectLiteral, Ext extends object> =
+  Ext & ThisType<QueryBuilder<Entity, false, Ext>> & ForbidBuiltInNames<Entity>;
+
+type ExtensionEntity<Ret> =
+  Ret extends { getMany(): Promise<(infer R)[]> } ? (R extends ObjectLiteral ? R : never) : never;
+
+// Re-type each extension so it composes with the rest of the chain. An entity-returning method
+// becomes polymorphic over the current entity and projection (recovered from `this` via the brand):
+// it intersects its own result onto the current entity — so its joins add to whatever the chain has
+// already narrowed rather than resetting to the base — and preserves the current projection, so it
+// stays callable after `select()` and keeps `getMany`/`getOne` omitted there, exactly like a
+// built-in. A method that only adds `where`/`orderBy` returns the base entity, so the intersection
+// is a no-op and the current narrowing is preserved.
+type PolymorphicExtensions<Entity extends ObjectLiteral, Ext extends object> = {
+  [K in keyof Ext]: Ext[K] extends (...args: infer A) => infer Ret
+    ? [ExtensionEntity<Ret>] extends [never]
+      ? Ext[K]
+      : <Current extends ObjectLiteral, CurrentProjected extends boolean>(
+          this: { readonly [ENTITY_BRAND]?: { entity: Current, projected: CurrentProjected } }, ...args: A
+        ) => QueryBuilder<Current & ExtensionEntity<Ret>, CurrentProjected, PolymorphicExtensions<Entity, Ext>>
+    : Ext[K];
+};
+
+export function defineQueryBuilder<Entity extends ObjectLiteral, Ext extends object>(
+  _repository: Repository<Entity> | (() => Repository<Entity>),
+  extensions: QueryBuilderExtensions<Entity, Ext>,
+): (repository: Repository<Entity>, alias: string) => QueryBuilder<Entity, false, PolymorphicExtensions<Entity, Ext>> {
+  class ExtendedQueryBuilder extends CustomQueryBuilder<Entity, false, Ext> {}
+
+  Object.assign(ExtendedQueryBuilder.prototype, extensions);
+
+  return (repository: Repository<Entity>, alias: string) =>
+    new ExtendedQueryBuilder(repository, alias) as unknown as QueryBuilder<Entity, false, PolymorphicExtensions<Entity, Ext>>;
+}
+
+export type SharedQueryBuilder<Shared extends object = Record<never, never>> = QueryBuilder<ObjectLiteral, false, Shared>;
+
+export function defineSharedQueryBuilder<Shared extends object>(extensions: QueryBuilderExtensions<ObjectLiteral, Shared>): Shared {
+  return extensions;
 }

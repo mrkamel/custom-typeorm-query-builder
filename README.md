@@ -33,6 +33,122 @@ export const UserRepository = dataSource.getRepository(UserEntity).extend({
 });
 ```
 
+## Custom query builders
+
+`defineQueryBuilder` attaches reusable, chainable filter methods to a repository's
+builder. Each method runs with `this` bound to the builder, so it can call any
+built-in (`where`, joins, …) or another custom method, and every method returns a
+builder that still carries the custom methods — so custom and built-in calls chain
+in any order.
+
+Define the builder factory in the repository's source file and have `qb()` return
+it, so callers get the custom methods through the same `qb()` entry point they
+already use:
+
+```ts
+import { defineQueryBuilder } from 'custom-typeorm-query-builder';
+import { dataSource } from './dataSource';
+import { UserEntity } from './entities/UserEntity';
+
+const createUserQueryBuilder = defineQueryBuilder(() => UserRepository, {
+  named(name: string) {
+    return this.where({ name });
+  },
+  adults() {
+    return this.where('users.age >= :min', { min: 18 });
+  },
+  withProfile() {
+    return this.joinsAndSelects(['profile']);
+  },
+});
+
+export const UserRepository = dataSource.getRepository(UserEntity).extend({
+  qb(alias: string = 'users') {
+    return createUserQueryBuilder(this, alias);
+  },
+});
+```
+
+Passing `this` to the factory (rather than binding the repository at definition
+time) means the builder runs against the caller's repository — so a `qb()` invoked
+on a transaction-scoped repository keeps that transaction's `EntityManager`. The
+repository given to `defineQueryBuilder` is used only to infer the entity and the
+extension types.
+
+Now every `UserRepository.qb()` chain has the custom methods available alongside
+the built-ins, in any order:
+
+```ts
+await UserRepository.qb().adults().named('alice').getMany();
+await UserRepository.qb().where({ name: 'alice' }).adults().getMany();
+```
+
+Relation narrowing survives a custom join method, so a hydrated relation stays
+non-nullable through the rest of the chain:
+
+```ts
+const user = await UserRepository.qb().withProfile().getOneOrFail();
+user.profile.bio;
+```
+
+`defineQueryBuilder` returns a factory that takes the repository to run against and
+the alias to use, so pick the default in your `qb()` wrapper (as above) and let
+callers override it per query:
+
+```ts
+await UserRepository.qb('u').where('u.age >= :min', { min: 18 }).getMany();
+```
+
+The repository argument to `defineQueryBuilder` is never invoked at runtime — it
+exists only to infer the entity and extension types — so pass a thunk
+(`() => UserRepository`) whenever referencing the repository eagerly would be a
+problem, such as the forward reference above or a two-file import cycle:
+
+```ts
+const createUserQueryBuilder = defineQueryBuilder(() => UserRepository, { /* ... */ });
+```
+
+Immutability is preserved — every call, custom or built-in, returns a clone. An
+extension whose name collides with a built-in builder method is a compile-time
+error. A raw-SQL extension that hardcodes an alias (like `adults` above) is tied to
+that alias, so use the default alias with it or write the condition against the
+alias you pass.
+
+### Sharing extensions across query builders
+
+Some methods are entity-agnostic — e.g. a `paginate` method might only touch
+`skip`/`take`. Define these once with `defineSharedQueryBuilder` and spread them into any
+`defineQueryBuilder`:
+
+```ts
+import { defineQueryBuilder, defineSharedQueryBuilder } from 'custom-typeorm-query-builder';
+
+export const sharedQueryBuilder = defineSharedQueryBuilder({
+  paginate({ page, perPage }: { page: number, perPage: number }) {
+    return this.skip((page - 1) * perPage).take(perPage);
+  },
+});
+
+const createUserQueryBuilder = defineQueryBuilder(() => UserRepository, {
+  ...sharedQueryBuilder,
+  adults() {
+    return this.where('users.age >= :min', { min: 18 });
+  },
+  withPosts() {
+    return this.leftJoinsAndSelects(['posts']);
+  },
+});
+
+await UserRepository.qb().withPosts().adults().paginate({ page: 1, perPage: 20 }).getManyAndCount();
+```
+
+A shared method can use any built-in and call sibling shared methods, but it has no
+knowledge of the concrete entity — the object forms of `where`/`orderBy` accept any keys
+without per-column checking, so use the raw-SQL forms when you need type safety. It never
+narrows relations, so it preserves whatever the chain has already joined — `paginate`
+above keeps the `withPosts()` hydration. Names that collide with a built-in are a
+compile-time error.
+
 ## Examples
 
 ### Basic equality and `IS NULL`

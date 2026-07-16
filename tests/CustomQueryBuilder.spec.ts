@@ -515,7 +515,7 @@ describe('CustomQueryBuilder', () => {
       const alice = await createUser({ name: 'alice' });
       await createProfile({ bio: 'bio', user_id: alice.id });
       const carol = await createUser({ name: 'carol' });
-      await createProfile({ user_id: carol.id });
+      await createProfile({ bio: 'other', user_id: carol.id });
       const _bob = await createUser({ name: 'bob' });
 
       const result = await UserRepository.qb()
@@ -561,7 +561,7 @@ describe('CustomQueryBuilder', () => {
       const alice = await createUser({ name: 'alice' });
       await createProfile({ bio: 'bio', user_id: alice.id });
       const carol = await createUser({ name: 'carol' });
-      await createProfile({ user_id: carol.id });
+      await createProfile({ bio: 'other', user_id: carol.id });
       const _bob = await createUser({ name: 'bob' });
 
       const result = await UserRepository.qb()

@@ -763,14 +763,8 @@ export function defineQueryBuilder<Entity extends ObjectLiteral, Ext extends obj
     new ExtendedQueryBuilder(repository, alias) as unknown as QueryBuilder<Entity, false, PolymorphicExtensions<Entity, Ext>>;
 }
 
-// The `this` type for entity-generic extensions: a builder over an unknown entity, so only
-// entity-agnostic methods (`skip`, `take`, raw `where`, …) are available.
-export type SharedQueryBuilder<Shared extends object = Record<never, never>> =
-  QueryBuilder<ObjectLiteral, false, Shared>;
+export type SharedQueryBuilder<Shared extends object = Record<never, never>> = QueryBuilder<ObjectLiteral, false, Shared>;
 
-// Define reusable, entity-generic extensions once and spread them into any `defineQueryBuilder`.
-export function defineSharedQueryBuilder<Shared extends object>(
-  extensions: QueryBuilderExtensions<ObjectLiteral, Shared>,
-): Shared {
+export function defineSharedQueryBuilder<Shared extends object>(extensions: QueryBuilderExtensions<ObjectLiteral, Shared>): Shared {
   return extensions;
 }

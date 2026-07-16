@@ -12,8 +12,14 @@ const createUserQueryBuilder = defineQueryBuilder(() => UserRepository, {
   withProfile() {
     return this.joinsAndSelects(['profile']);
   },
+  withPosts() {
+    return this.leftJoinsAndSelects(['posts']);
+  },
   hasProfile() {
     return this.joins(['profile']);
+  },
+  orderedByName() {
+    return this.orderBy({ name: 'ASC' });
   },
 });
 

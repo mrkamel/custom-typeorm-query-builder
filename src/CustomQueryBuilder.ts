@@ -713,14 +713,35 @@ type ForbidBuiltInNames<Entity extends ObjectLiteral> = {
 export type QueryBuilderExtensions<Entity extends ObjectLiteral, Ext extends object> =
   Ext & ThisType<QueryBuilder<Entity, false, Ext>> & ForbidBuiltInNames<Entity>;
 
+type IsEqual<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
+
+type ExtensionEntity<Ret> =
+  Ret extends { getMany(): Promise<(infer R)[]> } ? (R extends ObjectLiteral ? R : never) : never;
+
+// Re-type each extension so it composes with join narrowing. A method that returns the base
+// entity unchanged (e.g. it only adds `where`/`orderBy`) becomes polymorphic over the current
+// entity, so calling it after a join keeps the joined type instead of resetting to the base.
+// A method that narrows (adds a `*AndSelect` join) keeps its own narrowed return type.
+type PolymorphicExtensions<Entity extends ObjectLiteral, Ext extends object> = {
+  [K in keyof Ext]: Ext[K] extends (...args: infer A) => infer Ret
+    ? [ExtensionEntity<Ret>] extends [never]
+      ? Ext[K]
+      : IsEqual<ExtensionEntity<Ret>, Entity> extends true
+        ? <Current extends ObjectLiteral>(this: { getMany(): Promise<Current[]> }, ...args: A)
+            => QueryBuilder<Current, false, PolymorphicExtensions<Entity, Ext>>
+        : (...args: A) => QueryBuilder<ExtensionEntity<Ret> & ObjectLiteral, false, PolymorphicExtensions<Entity, Ext>>
+    : Ext[K];
+};
+
 export function defineQueryBuilder<Entity extends ObjectLiteral, Ext extends object>(
   _repository: Repository<Entity> | (() => Repository<Entity>),
   extensions: QueryBuilderExtensions<Entity, Ext>,
-): (repository: Repository<Entity>, alias: string) => QueryBuilder<Entity, false, Ext> {
+): (repository: Repository<Entity>, alias: string) => QueryBuilder<Entity, false, PolymorphicExtensions<Entity, Ext>> {
   class ExtendedQueryBuilder extends CustomQueryBuilder<Entity, false, Ext> {}
 
   Object.assign(ExtendedQueryBuilder.prototype, extensions);
 
   return (repository: Repository<Entity>, alias: string) =>
-    new ExtendedQueryBuilder(repository, alias) as unknown as QueryBuilder<Entity, false, Ext>;
+    new ExtendedQueryBuilder(repository, alias) as unknown as QueryBuilder<Entity, false, PolymorphicExtensions<Entity, Ext>>;
 }

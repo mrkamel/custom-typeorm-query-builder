@@ -1342,4 +1342,18 @@ describe('defineQueryBuilder', () => {
       },
     });
   });
+
+  it('keeps a join-narrowed type when a preserving custom method is chained after the join', async () => {
+    const alice = await createUser('alice', 30);
+    await PostRepository.save({ title: 'a', published: true, user_id: alice.id });
+    await PostRepository.save({ title: 'b', published: true, user_id: alice.id });
+
+    const rows = await UserRepository.cqb()
+      .withPosts()
+      .where({ name: 'alice' })
+      .orderedByName()
+      .getMany();
+
+    expect(rows[0].posts.map((post) => post.title).sort()).toEqual(['a', 'b']);
+  });
 });

@@ -1,7 +1,17 @@
-import type { ObjectLiteral, Repository, EntityMetadata, SelectQueryBuilder } from 'typeorm';
-import { Brackets, NotBrackets } from 'typeorm';
+import type { ObjectLiteral, Repository, EntityMetadata, SelectQueryBuilder, Brackets } from 'typeorm';
+import { NotBrackets } from 'typeorm';
 
 export class CustomQueryBuilderError extends Error {}
+
+// `typeorm` is a peer dependency, so a `Brackets` handed to us may come from a different
+// installed copy of the package than the one we import — `instanceof Brackets` would then
+// false-negative. TypeORM's own code sidesteps this the same way (see InstanceChecker):
+// tag-check via the global symbol registry instead of the class reference.
+function isBracketsLike(value: unknown): value is Brackets {
+  const tag = (value as { readonly ['@instanceof']?: symbol } | null)?.['@instanceof'];
+
+  return tag === Symbol.for('Brackets') || tag === Symbol.for('NotBrackets');
+}
 
 type UnwrapRelation<T> = NonNullable<T> extends (infer U)[] ? U : NonNullable<T>;
 
@@ -221,7 +231,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
       const { newCondition, newParameters } = this.#rewriteParameters(conditions, parameters || {});
 
       this.#qb.andWhere(`(${newCondition})`, newParameters);
-    } else if (conditions instanceof Brackets) {
+    } else if (isBracketsLike(conditions)) {
       const { condition, parameters: bracketParameters } = this.#renderBracketsCondition(conditions);
       const { newCondition, newParameters } = this.#rewriteParameters(condition, bracketParameters);
 
@@ -264,7 +274,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
       const { newCondition, newParameters } = this.#rewriteParameters(conditions, parameters || {});
 
       this.#qb.andWhere(`NOT (${newCondition})`, newParameters);
-    } else if (conditions instanceof Brackets) {
+    } else if (isBracketsLike(conditions)) {
       const { condition, parameters: bracketParameters } = this.#renderBracketsCondition(new NotBrackets(conditions.whereFactory));
       const { newCondition, newParameters } = this.#rewriteParameters(condition, bracketParameters);
 

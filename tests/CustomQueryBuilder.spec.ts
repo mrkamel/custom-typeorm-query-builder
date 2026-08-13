@@ -292,6 +292,23 @@ describe('CustomQueryBuilder', () => {
       expect(baseResult).toHaveLength(2);
       expect(filteredResult).toHaveLength(1);
     });
+
+    it('accepts a Brackets-shaped object built by a different typeorm module instance', async () => {
+      const alice = await createUser({ name: 'alice' });
+      await createUser({ name: 'bob' });
+
+      // `typeorm` is a peer dependency, so a caller's `Brackets` may not be `instanceof`
+      // ours — simulate that by duck-typing the same shape TypeORM's own InstanceChecker
+      // relies on, instead of constructing via `new Brackets(...)`.
+      const foreignBrackets = {
+        '@instanceof': Symbol.for('Brackets'),
+        whereFactory: (qb: Parameters<ConstructorParameters<typeof Brackets>[0]>[0]) => qb.where('users.name = :a', { a: 'alice' }),
+      } as unknown as Brackets;
+
+      const result = await UserRepository.qb().where(foreignBrackets).getMany();
+
+      expect(result.map((user) => user.id)).toEqual([alice.id]);
+    });
   });
 
   describe('object form column restrictions', () => {

@@ -1,4 +1,5 @@
 import type { ObjectLiteral, Repository, EntityMetadata, SelectQueryBuilder } from 'typeorm';
+import { Brackets, NotBrackets } from 'typeorm';
 
 export class CustomQueryBuilderError extends Error {}
 
@@ -204,9 +205,25 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this.where('1 = 0');
   }
 
-  #applyWhere(conditions: string | WhereObjectConditions<Entity>, parameters?: ObjectLiteral) {
+  #renderBracketsCondition(conditions: Brackets) {
+    const stub = this.#repository.createQueryBuilder(this.#alias).where(conditions);
+    const renderer = stub as unknown as { createWhereClausesExpression?: (clauses: unknown[]) => string };
+
+    if (typeof renderer.createWhereClausesExpression !== 'function') {
+      throw new CustomQueryBuilderError('Brackets support relies on an internal TypeORM method that is missing on this version');
+    }
+
+    return { condition: renderer.createWhereClausesExpression(stub.expressionMap.wheres), parameters: stub.getParameters() };
+  }
+
+  #applyWhere(conditions: string | WhereObjectConditions<Entity> | Brackets, parameters?: ObjectLiteral) {
     if (typeof conditions === 'string') {
       const { newCondition, newParameters } = this.#rewriteParameters(conditions, parameters || {});
+
+      this.#qb.andWhere(`(${newCondition})`, newParameters);
+    } else if (conditions instanceof Brackets) {
+      const { condition, parameters: bracketParameters } = this.#renderBracketsCondition(conditions);
+      const { newCondition, newParameters } = this.#rewriteParameters(condition, bracketParameters);
 
       this.#qb.andWhere(`(${newCondition})`, newParameters);
     } else {
@@ -235,15 +252,23 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this.#extendedThis();
   }
 
-  where(conditions: string | WhereObjectConditions<Entity>, parameters?: ObjectLiteral): QueryBuilder<Entity, Projected, Ext> {
+  where(conditions: string, parameters?: ObjectLiteral): QueryBuilder<Entity, Projected, Ext>;
+  where(conditions: WhereObjectConditions<Entity>): QueryBuilder<Entity, Projected, Ext>;
+  where(conditions: Brackets): QueryBuilder<Entity, Projected, Ext>;
+  where(conditions: string | WhereObjectConditions<Entity> | Brackets, parameters?: ObjectLiteral): QueryBuilder<Entity, Projected, Ext> {
     return this.clone().#applyWhere(conditions, parameters);
   }
 
-  #applyWhereNot(conditions: string | WhereObjectConditions<Entity>, parameters?: ObjectLiteral) {
+  #applyWhereNot(conditions: string | WhereObjectConditions<Entity> | Brackets, parameters?: ObjectLiteral) {
     if (typeof conditions === 'string') {
       const { newCondition, newParameters } = this.#rewriteParameters(conditions, parameters || {});
 
       this.#qb.andWhere(`NOT (${newCondition})`, newParameters);
+    } else if (conditions instanceof Brackets) {
+      const { condition, parameters: bracketParameters } = this.#renderBracketsCondition(new NotBrackets(conditions.whereFactory));
+      const { newCondition, newParameters } = this.#rewriteParameters(condition, bracketParameters);
+
+      this.#qb.andWhere(`(${newCondition})`, newParameters);
     } else {
       const conditionsObject = conditions as ObjectLiteral;
 
@@ -270,7 +295,10 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this.#extendedThis();
   }
 
-  whereNot(conditions: string | WhereObjectConditions<Entity>, parameters?: ObjectLiteral): QueryBuilder<Entity, Projected, Ext> {
+  whereNot(conditions: string, parameters?: ObjectLiteral): QueryBuilder<Entity, Projected, Ext>;
+  whereNot(conditions: WhereObjectConditions<Entity>): QueryBuilder<Entity, Projected, Ext>;
+  whereNot(conditions: Brackets): QueryBuilder<Entity, Projected, Ext>;
+  whereNot(conditions: string | WhereObjectConditions<Entity> | Brackets, parameters?: ObjectLiteral): QueryBuilder<Entity, Projected, Ext> {
     return this.clone().#applyWhereNot(conditions, parameters);
   }
 

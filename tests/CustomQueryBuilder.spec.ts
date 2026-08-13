@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { Brackets } from 'typeorm';
 import { defineQueryBuilder } from '../src/CustomQueryBuilder';
 import { UserRepository } from './repositories/UserRepository';
 import { ProfileRepository } from './repositories/ProfileRepository';
@@ -223,6 +224,74 @@ describe('CustomQueryBuilder', () => {
 
       expect(result.map((row) => row.code.value).sort()).toEqual(['alpha', 'beta']);
     });
+
+    it('accepts a Brackets condition for OR-grouping that the object form cannot express', async () => {
+      const alice = await createUser({ name: 'alice', age: 30 });
+      const bob = await createUser({ name: 'bob', age: 40 });
+      await createUser({ name: 'carol', age: 50 });
+
+      const result = await UserRepository.qb()
+        .where(new Brackets((qb) => qb.where('users.name = :a', { a: 'alice' }).orWhere('users.name = :b', { b: 'bob' })))
+        .getMany();
+
+      expect(result.map((user) => user.id).sort()).toEqual([alice.id, bob.id].sort());
+    });
+
+    it('ANDs a Brackets condition together with other where calls', async () => {
+      const alice = await createUser({ name: 'alice', age: 30 });
+      await createUser({ name: 'alice', age: 40 });
+      const bob = await createUser({ name: 'bob', age: 30 });
+      await createUser({ name: 'carol', age: 30 });
+
+      const result = await UserRepository.qb()
+        .where({ age: 30 })
+        .where(new Brackets((qb) => qb.where('users.name = :a', { a: 'alice' }).orWhere('users.name = :b', { b: 'bob' })))
+        .getMany();
+
+      expect(result.map((user) => user.id).sort()).toEqual([alice.id, bob.id].sort());
+    });
+
+    it('rewrites parameters inside a Brackets so they cannot collide with same-named parameters elsewhere in the chain', async () => {
+      const alice = await createUser({ name: 'alice', age: 30 });
+      await createUser({ name: 'alice', age: 40 });
+      await createUser({ name: 'bob', age: 30 });
+
+      const result = await UserRepository.qb()
+        .where('users.age = :value', { value: 30 })
+        .where(new Brackets((qb) => qb.where('users.name = :value', { value: 'alice' })))
+        .getMany();
+
+      expect(result.map((user) => user.id)).toEqual([alice.id]);
+    });
+
+    it('supports nested Brackets/NotBrackets inside a Brackets condition', async () => {
+      const alice = await createUser({ name: 'alice', age: 30 });
+      await createUser({ name: 'alice', age: 40 });
+      const bob = await createUser({ name: 'bob', age: 50 });
+      await createUser({ name: 'carol', age: 60 });
+
+      const result = await UserRepository.qb()
+        .where(new Brackets((qb) => qb
+          .where(new Brackets((inner) => inner.where('users.name = :a', { a: 'alice' }).andWhere('users.age = :age', { age: 30 })))
+          .orWhere('users.name = :b', { b: 'bob' })))
+        .getMany();
+
+      expect(result.map((user) => user.id).sort()).toEqual([alice.id, bob.id].sort());
+    });
+
+    it('returns a new instance without mutating the original when given a Brackets', async () => {
+      await createUser({ name: 'alice' });
+      await createUser({ name: 'bob' });
+
+      const base = UserRepository.qb();
+      const filtered = base.where(new Brackets((qb) => qb.where('users.name = :a', { a: 'alice' })));
+
+      const baseResult = await base.getMany();
+      const filteredResult = await filtered.getMany();
+
+      expect(baseResult).toHaveLength(2);
+      expect(filteredResult).toHaveLength(1);
+    });
   });
 
   describe('object form column restrictions', () => {
@@ -315,6 +384,31 @@ describe('CustomQueryBuilder', () => {
         .getMany();
 
       expect(result.map((row) => row.id)).toEqual([gamma.id]);
+    });
+
+    it('negates a Brackets condition', async () => {
+      await createUser({ name: 'alice' });
+      await createUser({ name: 'bob' });
+      const carol = await createUser({ name: 'carol' });
+
+      const result = await UserRepository.qb()
+        .whereNot(new Brackets((qb) => qb.where('users.name = :a', { a: 'alice' }).orWhere('users.name = :b', { b: 'bob' })))
+        .getMany();
+
+      expect(result.map((user) => user.id)).toEqual([carol.id]);
+    });
+
+    it('rewrites parameters inside a negated Brackets so they cannot collide with same-named parameters elsewhere in the chain', async () => {
+      const alice = await createUser({ name: 'alice', age: 30 });
+      await createUser({ name: 'bob', age: 30 });
+      await createUser({ name: 'alice', age: 40 });
+
+      const result = await UserRepository.qb()
+        .where('users.age = :value', { value: 30 })
+        .whereNot(new Brackets((qb) => qb.where('users.name = :value', { value: 'bob' })))
+        .getMany();
+
+      expect(result.map((user) => user.id)).toEqual([alice.id]);
     });
   });
 

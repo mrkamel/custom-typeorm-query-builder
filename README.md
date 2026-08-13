@@ -7,6 +7,7 @@ A type-safe wrapper around TypeORM's `SelectQueryBuilder` with:
 - Stricter relation typing via dotted-path inference (`leftJoinAndSelect`, `innerJoin`, etc.)
 - A projection-aware `select` that prevents `getOne`/`getMany` from returning entities with missing fields
 - Powerful `where()` / `whereNot()` accepting object parameters (with proper `IS NULL` / `IS NOT NULL` handling)
+- `where()` / `whereNot()` also accept a TypeORM `Brackets` object while still providing parameter-collision protection
 - Named parameter fix: parameters are rewritten and namespaced so user-supplied names never collide across chained calls
 - Fixed `where` using braces: every condition is wrapped in `(...)` so combining with `OR`/`AND` produces correct precedence
 - Powerful `update()` accepting object parameter

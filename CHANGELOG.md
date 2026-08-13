@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.0
+
+### Added
+
+- `where()` / `whereNot()` accept a TypeORM `Brackets` object, for `OR`/nested grouping the
+  flat object form can't express. Parameters set inside the `Brackets` are rewritten the same
+  way as raw SQL conditions, so they can't collide with parameters used elsewhere in the
+  chain. `whereNot()` negates the whole group.
+
 ## 0.7.0
 
 ### Added

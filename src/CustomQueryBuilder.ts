@@ -760,6 +760,10 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
   getRawMany() {
     return this.#qb.getRawMany();
   }
+
+  getRepository() {
+    return this.#repository;
+  }
 }
 
 type ForbidBuiltInNames<Entity extends ObjectLiteral> = {

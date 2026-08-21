@@ -577,6 +577,18 @@ row-multiplying join in the chain, raw-row pagination would cut a single PK's
 joined rows across a `LIMIT` boundary and the cursor would advance past the
 leftover rows, silently skipping data.
 
+### `getRepository()`
+
+Returns the `Repository` the builder was created from:
+
+```ts
+const repository = UserRepository.qb().getRepository();
+```
+
+Inside a transaction this is the transaction-scoped repository (`manager.withRepository(...)`),
+not the original one — useful for issuing further calls (`save`, another `qb()`, ...) that
+must stay inside the same transaction.
+
 ### Immutability
 
 Every chained call returns a fresh builder, so a base query can be safely reused as a starting point:

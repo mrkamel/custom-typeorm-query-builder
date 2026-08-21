@@ -1109,6 +1109,25 @@ describe('CustomQueryBuilder', () => {
     });
   });
 
+  describe('getRepository', () => {
+    it('returns the repository the query builder was created from', () => {
+      const repository = UserRepository.qb().getRepository();
+
+      expect(repository).toBe(UserRepository);
+    });
+
+    it('returns the transaction-scoped repository when qb() runs inside a transaction', async () => {
+      await UserRepository.manager.transaction(async (manager) => {
+        const transactionalRepository = manager.withRepository(UserRepository);
+
+        const repository = transactionalRepository.qb().getRepository();
+
+        expect(repository).toBe(transactionalRepository);
+        expect(repository).not.toBe(UserRepository);
+      });
+    });
+  });
+
   describe('getCount', () => {
     it('returns the number of matching rows', async () => {
       await createUser({ name: 'alice', age: 30 });

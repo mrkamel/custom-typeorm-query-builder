@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.0
+
+### Added
+
+- `getRepository()` — returns the (possibly transaction-scoped) `Repository` the builder
+  was created from.
+
 ## 0.8.0
 
 ### Added

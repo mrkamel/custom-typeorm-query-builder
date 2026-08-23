@@ -927,6 +927,24 @@ describe('CustomQueryBuilder', () => {
       const result = await UserRepository.qb().orderBy({ name: 'ASC' }).limit(1).getMany();
       expect(result).toHaveLength(1);
     });
+
+    it('resets skip, take and limit when called without an argument', async () => {
+      await createUser({ name: 'alice' });
+      await createUser({ name: 'bob' });
+      await createUser({ name: 'carol' });
+
+      const result = await UserRepository.qb()
+        .orderBy({ name: 'ASC' })
+        .skip(1)
+        .take(1)
+        .limit(1)
+        .skip()
+        .take()
+        .limit()
+        .getMany();
+
+      expect(result.map((user) => user.name)).toEqual(['alice', 'bob', 'carol']);
+    });
   });
 
   describe('select', () => {

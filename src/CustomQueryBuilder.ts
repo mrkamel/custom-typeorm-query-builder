@@ -605,9 +605,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
   }
 
   #applyUnselect() {
-    // Mirrors what `repository.createQueryBuilder(alias)` sets up initially: selecting the
-    // alias itself (rather than an empty list) is what tells TypeORM's SQL generation to
-    // include every entity column, properly aliased for entity hydration.
+    // Mirrors what `repository.createQueryBuilder(alias)` sets up initially
     this.#qb.select(this.#alias);
     this.#config.selects = [];
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.11.0
+
+### Added
+
+- `reselect()` — same signature as `select()`, but replaces the running selection instead of
+  appending to it, dropping any columns picked up by a prior `select()` or
+  `leftJoinAndSelect()`/`innerJoinAndSelect()`.
+- `reorderBy()` — same signature as `orderBy()`, but replaces the running sort instead of
+  appending to it. Called with no arguments, it clears the sort entirely.
+
 ## 0.10.0
 
 ### Added

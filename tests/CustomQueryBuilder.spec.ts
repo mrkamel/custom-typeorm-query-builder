@@ -883,6 +883,41 @@ describe('CustomQueryBuilder', () => {
     });
   });
 
+  describe('reorderBy', () => {
+    it('clears a previously applied orderBy when called with no arguments', () => {
+      const sql = UserRepository.qb().orderBy({ name: 'ASC' }).reorderBy().getSql();
+
+      expect(sql).not.toMatch(/ORDER BY/i);
+    });
+
+    it('replaces rather than appends to a running sort', async () => {
+      await createUser({ name: 'carol', age: 30 });
+      await createUser({ name: 'alice', age: 20 });
+      await createUser({ name: 'bob', age: 10 });
+
+      const result = await UserRepository.qb()
+        .orderBy({ name: 'ASC' })
+        .reorderBy({ age: 'ASC' })
+        .getMany();
+
+      expect(result.map((user) => user.name)).toEqual(['bob', 'alice', 'carol']);
+    });
+
+    it('keeps but ignores a leftover SQL parameter from a previous orderBy', async () => {
+      const alice = await createUser({ name: 'alice', age: 30 });
+      await createUser({ name: 'bob', age: 40 });
+
+      const custom = UserRepository.qb().orderBy('ABS(users.age - :target) ASC', { target: 42 }).reorderBy();
+
+      expect(custom.getSql()).not.toMatch(/ORDER BY/i);
+      expect(Object.values(custom.getRawQueryBuilder().getParameters())).toContain(42);
+
+      const result = await custom.where({ id: alice.id }).getMany();
+
+      expect(result.map((user) => user.name)).toEqual(['alice']);
+    });
+  });
+
   describe('groupBy', () => {
     it('groups raw rows by a column', async () => {
       await createUser({ name: 'alice' });
@@ -1092,6 +1127,32 @@ describe('CustomQueryBuilder', () => {
 
       expect(rows.map((row) => row.users_name)).toEqual(['alice', 'bob']);
       expect(rows.map((row) => Number(row.oldCount))).toEqual([1, 1]);
+    });
+  });
+
+  describe('reselect', () => {
+    it('replaces rather than appends to a running selection', async () => {
+      await createUser({ name: 'alice', age: 30 });
+
+      const rows = await UserRepository.qb()
+        .select('users.name')
+        .reselect('users.age')
+        .getRawMany();
+
+      expect(rows).toEqual([{ users_age: 30 }]);
+    });
+
+    it('drops columns added by a prior leftJoinAndSelect', async () => {
+      const alice = await createUser({ name: 'alice' });
+      await createProfile({ bio: 'bio', user_id: alice.id });
+
+      const rows = await UserRepository.qb()
+        .leftJoinAndSelect<['profile']>('users.profile', 'profile')
+        .reselect('users.name')
+        .where({ id: alice.id })
+        .getRawMany();
+
+      expect(rows).toEqual([{ users_name: 'alice' }]);
     });
   });
 

@@ -510,6 +510,22 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this.clone().#applyOrderBy(sort, orderOrParameters);
   }
 
+  reorderBy(): QueryBuilder<Entity, Projected, Ext>;
+  reorderBy(sort: string, order?: 'ASC' | 'DESC'): QueryBuilder<Entity, Projected, Ext>;
+  reorderBy(sort: string, parameters: ObjectLiteral): QueryBuilder<Entity, Projected, Ext>;
+  reorderBy(sort: { [Key in keyof Entity]?: 'ASC' | 'DESC' }): QueryBuilder<Entity, Projected, Ext>;
+  reorderBy(
+    sort?: string | { [Key in keyof Entity]?: 'ASC' | 'DESC' },
+    orderOrParameters?: 'ASC' | 'DESC' | ObjectLiteral,
+  ): QueryBuilder<Entity, Projected, Ext> {
+    const fresh = this.clone();
+    fresh.#qb.orderBy();
+
+    if (sort === undefined) return fresh.#extendedThis();
+
+    return fresh.#applyOrderBy(sort, orderOrParameters);
+  }
+
   #applyGroupBy(group: string) {
     this.#qb.addGroupBy(group);
     return this.#extendedThis();
@@ -592,6 +608,24 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     if (!alias) throw new CustomQueryBuilderError('Alias must be provided when selecting a subquery');
 
     return this.clone<Entity, true>().#applySubSelect(selectionOrSubquery, alias);
+  }
+
+  reselect(selection: string): QueryBuilder<Entity, true, Ext>;
+  reselect(selection: string[]): QueryBuilder<Entity, true, Ext>;
+  reselect(subquery: AnyQueryBuilder, alias: string): QueryBuilder<Entity, true, Ext>;
+  reselect(
+    selectionOrSubquery: string | string[] | AnyQueryBuilder,
+    alias?: string,
+  ): QueryBuilder<Entity, true, Ext> {
+    const fresh = this.clone<Entity, true>();
+    fresh.#config.selects = [];
+
+    if (Array.isArray(selectionOrSubquery)) return fresh.#applySelect(selectionOrSubquery);
+    if (typeof selectionOrSubquery === 'string') return fresh.#applySelect([selectionOrSubquery]);
+
+    if (!alias) throw new CustomQueryBuilderError('Alias must be provided when selecting a subquery');
+
+    return fresh.#applySubSelect(selectionOrSubquery, alias);
   }
 
   getOne() {

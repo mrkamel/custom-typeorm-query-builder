@@ -437,6 +437,23 @@ await UserRepository.qb()
   .getMany();
 ```
 
+Repeated `orderBy(...)` calls append to the running sort, the same way `select`
+does. Use `reorderBy(...)` instead of `orderBy(...)` to replace it rather than
+appending — it takes the same arguments as `orderBy(...)`, or no arguments at
+all to clear the sort entirely:
+
+```ts
+await base
+  .orderBy({ name: 'ASC' })
+  .reorderBy({ age: 'DESC' }) // only sorted by age now
+  .getMany();
+
+await base
+  .orderBy({ name: 'ASC' })
+  .reorderBy() // no sort at all
+  .getMany();
+```
+
 `skip` / `take` are the ORM-level pagination knobs — they become `OFFSET` /
 `LIMIT` for simple queries, and switch to TypeORM's distinct-alias two-query
 strategy when combined with a `*-to-many` join load. `limit(n)` is a raw
@@ -504,6 +521,18 @@ await UserRepository.qb()
     UserRepository.qb().select('COUNT(*)').where('users.age >= :min', { min: 40 }),
     'oldCount',
   )
+  .getRawMany();
+```
+
+Repeated `select(...)` calls append to the running selection. Use
+`reselect(...)` instead of `select(...)` to replace it rather than appending —
+it takes the same arguments as `select(...)` and drops any columns picked up
+by a prior `select(...)` or `leftJoinAndSelect(...)`/`innerJoinAndSelect(...)`:
+
+```ts
+await UserRepository.qb()
+  .select('users.name')
+  .reselect('users.age') // only `users.age` comes back, not `users.name`
   .getRawMany();
 ```
 

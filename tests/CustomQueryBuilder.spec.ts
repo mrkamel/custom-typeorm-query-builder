@@ -883,6 +883,28 @@ describe('CustomQueryBuilder', () => {
     });
   });
 
+  describe('unorderBy', () => {
+    it('clears a previously applied orderBy', () => {
+      const sql = UserRepository.qb().orderBy({ name: 'ASC' }).unorderBy().getSql();
+
+      expect(sql).not.toMatch(/ORDER BY/i);
+    });
+
+    it('lets a later orderBy replace rather than append to the cleared sort', async () => {
+      await createUser({ name: 'carol', age: 30 });
+      await createUser({ name: 'alice', age: 20 });
+      await createUser({ name: 'bob', age: 10 });
+
+      const result = await UserRepository.qb()
+        .orderBy({ name: 'ASC' })
+        .unorderBy()
+        .orderBy({ age: 'ASC' })
+        .getMany();
+
+      expect(result.map((user) => user.name)).toEqual(['bob', 'alice', 'carol']);
+    });
+  });
+
   describe('groupBy', () => {
     it('groups raw rows by a column', async () => {
       await createUser({ name: 'alice' });
@@ -1092,6 +1114,32 @@ describe('CustomQueryBuilder', () => {
 
       expect(rows.map((row) => row.users_name)).toEqual(['alice', 'bob']);
       expect(rows.map((row) => Number(row.oldCount))).toEqual([1, 1]);
+    });
+  });
+
+  describe('unselect', () => {
+    it('restores the default entity selection and getOne/getMany at the type level', async () => {
+      const alice = await createUser({ name: 'alice' });
+
+      const result = await UserRepository.qb()
+        .select('users.name')
+        .unselect()
+        .where({ id: alice.id })
+        .getOne();
+
+      expect(result?.name).toBe('alice');
+    });
+
+    it('drops previously selected columns so a later select starts fresh', async () => {
+      await createUser({ name: 'alice', age: 30 });
+
+      const rows = await UserRepository.qb()
+        .select('users.name')
+        .unselect()
+        .select('users.age')
+        .getRawMany();
+
+      expect(rows).toEqual([{ users_age: 30 }]);
     });
   });
 

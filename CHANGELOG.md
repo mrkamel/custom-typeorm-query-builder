@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.11.0
+
+### Added
+
+- `unselect()` — clears a running `select(...)` projection and restores the default entity
+  selection, flipping the builder back to un-projected at the type level (`getOne` / `getMany` /
+  `getOneOrFail` become available again). A later `select(...)` starts a fresh list instead of
+  appending.
+- `unorderBy()` — clears a running `orderBy(...)` sort. A later `orderBy(...)` replaces rather
+  than appending to what was there before.
+
 ## 0.10.0
 
 ### Added

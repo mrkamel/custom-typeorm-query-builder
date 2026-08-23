@@ -437,6 +437,17 @@ await UserRepository.qb()
   .getMany();
 ```
 
+Repeated `orderBy(...)` calls append to the running sort, the same way `select`
+does. Call `unorderBy()` first to clear it instead of appending:
+
+```ts
+await base
+  .orderBy({ name: 'ASC' })
+  .unorderBy()
+  .orderBy({ age: 'DESC' })
+  .getMany();
+```
+
 `skip` / `take` are the ORM-level pagination knobs — they become `OFFSET` /
 `LIMIT` for simple queries, and switch to TypeORM's distinct-alias two-query
 strategy when combined with a `*-to-many` join load. `limit(n)` is a raw
@@ -505,6 +516,19 @@ await UserRepository.qb()
     'oldCount',
   )
   .getRawMany();
+```
+
+Call `unselect()` to drop the running selection and go back to the default
+entity projection — `getOne` / `getMany` / `getOneOrFail` become available
+again at the type level, and a later `select(...)` starts a fresh list
+instead of appending:
+
+```ts
+await UserRepository.qb()
+  .select('users.name')
+  .unselect()
+  .where({ id })
+  .getOne(); // ✓ full entity back
 ```
 
 ### Updates

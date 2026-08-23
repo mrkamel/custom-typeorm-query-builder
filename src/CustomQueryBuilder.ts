@@ -510,6 +510,16 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this.clone().#applyOrderBy(sort, orderOrParameters);
   }
 
+  #applyUnorderBy() {
+    this.#qb.orderBy();
+
+    return this.#extendedThis();
+  }
+
+  unorderBy(): QueryBuilder<Entity, Projected, Ext> {
+    return this.clone().#applyUnorderBy();
+  }
+
   #applyGroupBy(group: string) {
     this.#qb.addGroupBy(group);
     return this.#extendedThis();
@@ -592,6 +602,20 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     if (!alias) throw new CustomQueryBuilderError('Alias must be provided when selecting a subquery');
 
     return this.clone<Entity, true>().#applySubSelect(selectionOrSubquery, alias);
+  }
+
+  #applyUnselect() {
+    // Mirrors what `repository.createQueryBuilder(alias)` sets up initially: selecting the
+    // alias itself (rather than an empty list) is what tells TypeORM's SQL generation to
+    // include every entity column, properly aliased for entity hydration.
+    this.#qb.select(this.#alias);
+    this.#config.selects = [];
+
+    return this.#extendedThis();
+  }
+
+  unselect(): QueryBuilder<Entity, false, Ext> {
+    return this.clone<Entity, false>().#applyUnselect();
   }
 
   getOne() {

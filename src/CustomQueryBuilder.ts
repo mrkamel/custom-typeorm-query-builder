@@ -519,30 +519,30 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this.clone().#applyGroupBy(group);
   }
 
-  #applySkip(count: number) {
+  #applySkip(count?: number) {
     this.#qb.skip(count);
     return this.#extendedThis();
   }
 
-  skip(count: number): QueryBuilder<Entity, Projected, Ext> {
+  skip(count?: number): QueryBuilder<Entity, Projected, Ext> {
     return this.clone().#applySkip(count);
   }
 
-  #applyTake(count: number) {
+  #applyTake(count?: number) {
     this.#qb.take(count);
     return this.#extendedThis();
   }
 
-  take(count: number): QueryBuilder<Entity, Projected, Ext> {
+  take(count?: number): QueryBuilder<Entity, Projected, Ext> {
     return this.clone().#applyTake(count);
   }
 
-  #applyLimit(count: number) {
+  #applyLimit(count?: number) {
     this.#qb.limit(count);
     return this.#extendedThis();
   }
 
-  limit(count: number): QueryBuilder<Entity, Projected, Ext> {
+  limit(count?: number): QueryBuilder<Entity, Projected, Ext> {
     return this.clone().#applyLimit(count);
   }
 

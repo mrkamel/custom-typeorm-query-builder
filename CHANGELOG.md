@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.0
+
+### Added
+
+- `skip()`, `take()` and `limit()` accept no argument to clear a previously set value, matching
+  TypeORM's own `QueryBuilder` methods.
+
 ## 0.9.0
 
 ### Added

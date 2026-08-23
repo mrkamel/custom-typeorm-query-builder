@@ -438,13 +438,19 @@ await UserRepository.qb()
 ```
 
 Repeated `orderBy(...)` calls append to the running sort, the same way `select`
-does. Call `unorderBy()` first to clear it instead of appending:
+does. Use `reorderBy(...)` instead of `orderBy(...)` to replace it rather than
+appending — it takes the same arguments as `orderBy(...)`, or no arguments at
+all to clear the sort entirely:
 
 ```ts
 await base
   .orderBy({ name: 'ASC' })
-  .unorderBy()
-  .orderBy({ age: 'DESC' })
+  .reorderBy({ age: 'DESC' }) // only sorted by age now
+  .getMany();
+
+await base
+  .orderBy({ name: 'ASC' })
+  .reorderBy() // no sort at all
   .getMany();
 ```
 
@@ -518,17 +524,16 @@ await UserRepository.qb()
   .getRawMany();
 ```
 
-Call `unselect()` to drop the running selection and go back to the default
-entity projection — `getOne` / `getMany` / `getOneOrFail` become available
-again at the type level, and a later `select(...)` starts a fresh list
-instead of appending:
+Repeated `select(...)` calls append to the running selection. Use
+`reselect(...)` instead of `select(...)` to replace it rather than appending —
+it takes the same arguments as `select(...)` and drops any columns picked up
+by a prior `select(...)` or `leftJoinAndSelect(...)`/`innerJoinAndSelect(...)`:
 
 ```ts
 await UserRepository.qb()
   .select('users.name')
-  .unselect()
-  .where({ id })
-  .getOne(); // ✓ full entity back
+  .reselect('users.age') // only `users.age` comes back, not `users.name`
+  .getRawMany();
 ```
 
 ### Updates

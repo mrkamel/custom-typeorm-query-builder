@@ -510,14 +510,20 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this.clone().#applyOrderBy(sort, orderOrParameters);
   }
 
-  #applyUnorderBy() {
-    this.#qb.orderBy();
+  reorderBy(): QueryBuilder<Entity, Projected, Ext>;
+  reorderBy(sort: string, order?: 'ASC' | 'DESC'): QueryBuilder<Entity, Projected, Ext>;
+  reorderBy(sort: string, parameters: ObjectLiteral): QueryBuilder<Entity, Projected, Ext>;
+  reorderBy(sort: { [Key in keyof Entity]?: 'ASC' | 'DESC' }): QueryBuilder<Entity, Projected, Ext>;
+  reorderBy(
+    sort?: string | { [Key in keyof Entity]?: 'ASC' | 'DESC' },
+    orderOrParameters?: 'ASC' | 'DESC' | ObjectLiteral,
+  ): QueryBuilder<Entity, Projected, Ext> {
+    const fresh = this.clone();
+    fresh.#qb.orderBy();
 
-    return this.#extendedThis();
-  }
+    if (sort === undefined) return fresh.#extendedThis();
 
-  unorderBy(): QueryBuilder<Entity, Projected, Ext> {
-    return this.clone().#applyUnorderBy();
+    return fresh.#applyOrderBy(sort, orderOrParameters);
   }
 
   #applyGroupBy(group: string) {
@@ -604,16 +610,22 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this.clone<Entity, true>().#applySubSelect(selectionOrSubquery, alias);
   }
 
-  #applyUnselect() {
-    // Mirrors what `repository.createQueryBuilder(alias)` sets up initially
-    this.#qb.select(this.#alias);
-    this.#config.selects = [];
+  reselect(selection: string): QueryBuilder<Entity, true, Ext>;
+  reselect(selection: string[]): QueryBuilder<Entity, true, Ext>;
+  reselect(subquery: AnyQueryBuilder, alias: string): QueryBuilder<Entity, true, Ext>;
+  reselect(
+    selectionOrSubquery: string | string[] | AnyQueryBuilder,
+    alias?: string,
+  ): QueryBuilder<Entity, true, Ext> {
+    const fresh = this.clone<Entity, true>();
+    fresh.#config.selects = [];
 
-    return this.#extendedThis();
-  }
+    if (Array.isArray(selectionOrSubquery)) return fresh.#applySelect(selectionOrSubquery);
+    if (typeof selectionOrSubquery === 'string') return fresh.#applySelect([selectionOrSubquery]);
 
-  unselect(): QueryBuilder<Entity, false, Ext> {
-    return this.clone<Entity, false>().#applyUnselect();
+    if (!alias) throw new CustomQueryBuilderError('Alias must be provided when selecting a subquery');
+
+    return fresh.#applySubSelect(selectionOrSubquery, alias);
   }
 
   getOne() {

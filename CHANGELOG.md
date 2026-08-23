@@ -4,12 +4,11 @@
 
 ### Added
 
-- `unselect()` — clears a running `select(...)` projection and restores the default entity
-  selection, flipping the builder back to un-projected at the type level (`getOne` / `getMany` /
-  `getOneOrFail` become available again). A later `select(...)` starts a fresh list instead of
-  appending.
-- `unorderBy()` — clears a running `orderBy(...)` sort. A later `orderBy(...)` replaces rather
-  than appending to what was there before.
+- `reselect()` — same signature as `select()`, but replaces the running selection instead of
+  appending to it, dropping any columns picked up by a prior `select()` or
+  `leftJoinAndSelect()`/`innerJoinAndSelect()`.
+- `reorderBy()` — same signature as `orderBy()`, but replaces the running sort instead of
+  appending to it. Called with no arguments, it clears the sort entirely.
 
 ## 0.10.0
 

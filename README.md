@@ -601,6 +601,27 @@ const rows = await raw.getMany();
 
 The returned builder is a clone, so mutating it never leaks back into the wrapper you called it on.
 
+### Iterating large result sets (`forEach`)
+
+`forEach()` walks the whole result set in batches, keyset-paginated on the primary key, so memory
+stays flat however many rows match. `batchSize` defaults to `1000`:
+
+```ts
+for await (const user of UserRepository.qb().where({ active: true }).forEach({ batchSize: 500 })) {
+  await handle(user);
+}
+```
+
+Iteration is always ordered by primary key — that is what keeps the cursor stable — so any
+`orderBy()` earlier in the chain is replaced rather than honoured. Pass `order: 'DESC'` to walk it
+backwards:
+
+```ts
+for await (const user of UserRepository.qb().forEach({ order: 'DESC' })) {
+  await handle(user);
+}
+```
+
 There is intentionally no `forEachRaw` counterpart to `forEach`. With any
 row-multiplying join in the chain, raw-row pagination would cut a single PK's
 joined rows across a `LIMIT` boundary and the cursor would advance past the

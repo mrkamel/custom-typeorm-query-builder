@@ -1274,6 +1274,20 @@ describe('CustomQueryBuilder', () => {
       expect(yielded).toEqual([...created].map((user) => user.id).sort());
     });
 
+    it('yields every row in descending primary key order', async () => {
+      const created = [];
+
+      for (let index = 0; index < 7; index += 1) created.push(await createUser({ name: `user${index}` }));
+
+      const yielded: string[] = [];
+
+      for await (const row of UserRepository.qb().forEach({ batchSize: 3, order: 'DESC' })) {
+        yielded.push(row.id);
+      }
+
+      expect(yielded).toEqual(created.map((user) => user.id).sort().reverse());
+    });
+
     it('iterates correctly with a composite primary key', async () => {
       const tenantA = randomUUID();
       const tenantB = randomUUID();
@@ -1298,6 +1312,35 @@ describe('CustomQueryBuilder', () => {
         if (a.tenant_id !== b.tenant_id) return a.tenant_id < b.tenant_id ? -1 : 1;
 
         return a.user_id < b.user_id ? -1 : 1;
+      });
+
+      expect(yielded).toEqual(expected.map((row) => ({ tenant_id: row.tenant_id, user_id: row.user_id })));
+    });
+
+    it('iterates correctly with a composite primary key when descending', async () => {
+      const tenantA = randomUUID();
+      const tenantB = randomUUID();
+
+      const rows = [
+        { tenant_id: tenantA, user_id: randomUUID(), role: 'admin' },
+        { tenant_id: tenantA, user_id: randomUUID(), role: 'member' },
+        { tenant_id: tenantA, user_id: randomUUID(), role: 'viewer' },
+        { tenant_id: tenantB, user_id: randomUUID(), role: 'admin' },
+        { tenant_id: tenantB, user_id: randomUUID(), role: 'member' },
+      ];
+
+      for (const row of rows) await MembershipRepository.save(row);
+
+      const yielded: { tenant_id: string, user_id: string }[] = [];
+
+      for await (const row of MembershipRepository.qb().forEach({ batchSize: 2, order: 'DESC' })) {
+        yielded.push({ tenant_id: row.tenant_id, user_id: row.user_id });
+      }
+
+      const expected = [...rows].sort((a, b) => {
+        if (a.tenant_id !== b.tenant_id) return a.tenant_id > b.tenant_id ? -1 : 1;
+
+        return a.user_id > b.user_id ? -1 : 1;
       });
 
       expect(yielded).toEqual(expected.map((row) => ({ tenant_id: row.tenant_id, user_id: row.user_id })));

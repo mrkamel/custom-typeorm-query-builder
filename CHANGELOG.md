@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.0
+
+### Added
+
+- `forEach()` accepts an `order` option (`'ASC' | 'DESC'`, default `'ASC'`) to iterate the primary
+  key in reverse. The keyset comparison flips with it, so a descending scan pages with `<` instead
+  of `>` and still visits every row exactly once.
+
 ## 0.11.0
 
 ### Added

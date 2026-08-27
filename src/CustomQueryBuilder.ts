@@ -654,16 +654,18 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this.#qb.getManyAndCount();
   }
 
-  forEach(options: { batchSize?: number } = {}): AsyncIterable<Entity, void, undefined> {
+  forEach(options: { batchSize?: number, direction?: 'ASC' | 'DESC' } = {}): AsyncIterable<Entity, void, undefined> {
     return {
       [Symbol.asyncIterator]: (): AsyncIterator<Entity, void, undefined> => this.#iterateBatches(options),
     };
   }
 
-  async *#iterateBatches(options: { batchSize?: number }): AsyncGenerator<Entity, void, undefined> {
+  async *#iterateBatches(options: { batchSize?: number, direction?: 'ASC' | 'DESC' }): AsyncGenerator<Entity, void, undefined> {
     if (this.#config.selects.length > 0) throw new CustomQueryBuilderError('forEach cannot be used after select');
 
     const batchSize = options.batchSize ?? 1000;
+    const direction = options.direction ?? 'ASC';
+    const comparator = direction === 'DESC' ? '<' : '>';
     const primaryColumns = this.#repository.metadata.primaryColumns;
 
     if (primaryColumns.length === 0) {
@@ -679,8 +681,8 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
       batch.#qb.skip().take().limit(); // Remove any prior skip/take/limit
 
       // First call replaces any prior limit and orderBy; subsequent calls append.
-      batch.#qb.orderBy(`${this.#alias}.${primaryColumns[0].propertyName}`, 'ASC');
-      primaryColumns.slice(1).forEach((col) => batch.#qb.addOrderBy(`${this.#alias}.${col.propertyName}`, 'ASC'));
+      batch.#qb.orderBy(`${this.#alias}.${primaryColumns[0].propertyName}`, direction);
+      primaryColumns.slice(1).forEach((col) => batch.#qb.addOrderBy(`${this.#alias}.${col.propertyName}`, direction));
 
       if (cursor) {
         const placeholders = primaryColumns.map((col) => `:_pk_${col.propertyName}`).join(', ');
@@ -688,7 +690,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
 
         primaryColumns.forEach((col, index) => { parameters[`_pk_${col.propertyName}`] = cursor![index]; });
 
-        const { newCondition, newParameters } = batch.#rewriteParameters(`(${columnList}) > (${placeholders})`, parameters);
+        const { newCondition, newParameters } = batch.#rewriteParameters(`(${columnList}) ${comparator} (${placeholders})`, parameters);
 
         batch.#qb.andWhere(`(${newCondition})`, newParameters);
       }

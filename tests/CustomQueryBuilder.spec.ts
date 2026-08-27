@@ -1274,6 +1274,49 @@ describe('CustomQueryBuilder', () => {
       expect(yielded).toEqual([...created].map((user) => user.id).sort());
     });
 
+    it('iterates in descending primary-key order when direction is DESC', async () => {
+      const created = [];
+
+      for (let index = 0; index < 7; index += 1) created.push(await createUser({ name: `user${index}` }));
+
+      const yielded: string[] = [];
+
+      for await (const row of UserRepository.qb().forEach({ batchSize: 3, direction: 'DESC' })) {
+        yielded.push(row.id);
+      }
+
+      expect(yielded).toEqual(created.map((user) => user.id).sort().reverse());
+    });
+
+    it('iterates a composite primary key in descending order when direction is DESC', async () => {
+      const tenantA = randomUUID();
+      const tenantB = randomUUID();
+
+      const rows = [
+        { tenant_id: tenantA, user_id: randomUUID(), role: 'admin' },
+        { tenant_id: tenantA, user_id: randomUUID(), role: 'member' },
+        { tenant_id: tenantB, user_id: randomUUID(), role: 'admin' },
+        { tenant_id: tenantB, user_id: randomUUID(), role: 'member' },
+        { tenant_id: tenantB, user_id: randomUUID(), role: 'viewer' },
+      ];
+
+      for (const row of rows) await MembershipRepository.save(row);
+
+      const yielded: { tenant_id: string, user_id: string }[] = [];
+
+      for await (const row of MembershipRepository.qb().forEach({ batchSize: 2, direction: 'DESC' })) {
+        yielded.push({ tenant_id: row.tenant_id, user_id: row.user_id });
+      }
+
+      const expected = [...rows].sort((left, right) => {
+        if (left.tenant_id !== right.tenant_id) return left.tenant_id < right.tenant_id ? 1 : -1;
+
+        return left.user_id < right.user_id ? 1 : -1;
+      });
+
+      expect(yielded).toEqual(expected.map((row) => ({ tenant_id: row.tenant_id, user_id: row.user_id })));
+    });
+
     it('iterates correctly with a composite primary key', async () => {
       const tenantA = randomUUID();
       const tenantB = randomUUID();

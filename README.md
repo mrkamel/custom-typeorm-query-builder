@@ -585,6 +585,28 @@ await UserRepository.qb()
   .getOne();
 ```
 
+### Batch iteration with `forEach`
+
+`forEach()` streams the whole result set in primary-key-keyset batches, so you can
+walk a large table without loading it all into memory. It replaces any prior
+`orderBy` and ignores any prior `skip`/`take`/`limit`.
+
+```ts
+for await (const user of UserRepository.qb().where({ active: true }).forEach()) {
+  await sendReminder(user);
+}
+```
+
+`batchSize` (default `1000`) sets the rows fetched per round-trip. `direction`
+(`'ASC'` | `'DESC'`, default `'ASC'`) controls the primary-key order rows are
+iterated in.
+
+```ts
+for await (const user of UserRepository.qb().forEach({ batchSize: 500, direction: 'DESC' })) {
+  // newest primary keys first
+}
+```
+
 ### Escape hatch: `getRawQueryBuilder`
 
 When you need something our wrapper doesn't cover (custom CTEs, vendor-specific SQL, driver-level

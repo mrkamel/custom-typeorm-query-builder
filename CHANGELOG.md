@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.0
+
+### Added
+
+- `forEach()` accepts a `direction` option (`'ASC'` | `'DESC'`, default `'ASC'`) to control the
+  primary-key order rows are iterated in.
+
 ## 0.11.0
 
 ### Added

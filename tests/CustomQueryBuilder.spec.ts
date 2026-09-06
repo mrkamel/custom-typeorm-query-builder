@@ -1206,7 +1206,8 @@ describe('CustomQueryBuilder', () => {
         .reselect('users.age + :bump', 'bumped', { bump: 5 })
         .getRawMany();
 
-      expect(rows).toEqual([{ bumped: 35 }]);
+      expect(Object.keys(rows[0])).toEqual(['bumped']);
+      expect(rows.map((row) => Number(row.bumped))).toEqual([35]);
     });
   });
 

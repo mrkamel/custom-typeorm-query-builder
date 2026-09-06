@@ -8,7 +8,7 @@ import { MembershipEntity } from './entities/MembershipEntity';
 
 const entities = [UserEntity, ProfileEntity, PostEntity, CodeEntity, MembershipEntity];
 
-const driver = process.env.DB_DRIVER ?? 'postgres';
+const driver = process.env.DB_DRIVER ?? 'sqlite';
 
 function buildOptions(): DataSourceOptions {
   if (driver === 'sqlite') {

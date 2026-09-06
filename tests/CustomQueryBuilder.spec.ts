@@ -1128,6 +1128,49 @@ describe('CustomQueryBuilder', () => {
       expect(rows.map((row) => row.users_name)).toEqual(['alice', 'bob']);
       expect(rows.map((row) => Number(row.oldCount))).toEqual([1, 1]);
     });
+
+    it('aliases a string selection when given an alias', async () => {
+      await createUser({ name: 'alice', age: 30 });
+
+      const rows = await UserRepository.qb()
+        .select('users.age', 'years')
+        .getRawMany();
+
+      expect(rows).toEqual([{ years: 30 }]);
+    });
+
+    it('binds parameters into a string selection', async () => {
+      await createUser({ name: 'alice', age: 30 });
+
+      const rows = await UserRepository.qb()
+        .select('users.age + :bump', 'bumped', { bump: 5 })
+        .getRawMany();
+
+      expect(rows.map((row) => Number(row.bumped))).toEqual([35]);
+    });
+
+    it('does not collide selection parameter names with the outer query', async () => {
+      await createUser({ name: 'alice', age: 30 });
+      await createUser({ name: 'bob', age: 40 });
+
+      const rows = await UserRepository.qb()
+        .where('users.age >= :value', { value: 40 })
+        .select('users.age + :value', 'shifted', { value: 100 })
+        .getRawMany();
+
+      expect(rows.map((row) => Number(row.shifted))).toEqual([140]);
+    });
+
+    it('binds parameters when appending a string selection', async () => {
+      await createUser({ name: 'alice', age: 30 });
+
+      const rows = await UserRepository.qb()
+        .select('users.name')
+        .select('users.age * :factor', 'scaled', { factor: 3 })
+        .getRawMany();
+
+      expect(rows.map((row) => Number(row.scaled))).toEqual([90]);
+    });
   });
 
   describe('reselect', () => {
@@ -1153,6 +1196,18 @@ describe('CustomQueryBuilder', () => {
         .getRawMany();
 
       expect(rows).toEqual([{ users_name: 'alice' }]);
+    });
+
+    it('carries an alias and bound parameters through to the fresh selection', async () => {
+      await createUser({ name: 'alice', age: 30 });
+
+      const rows = await UserRepository.qb()
+        .select('users.name')
+        .reselect('users.age + :bump', 'bumped', { bump: 5 })
+        .getRawMany();
+
+      expect(Object.keys(rows[0])).toEqual(['bumped']);
+      expect(rows.map((row) => Number(row.bumped))).toEqual([35]);
     });
   });
 

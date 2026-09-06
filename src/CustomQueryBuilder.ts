@@ -574,6 +574,22 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this.#extendedThis();
   }
 
+  #applySelectExpression(selection: string, alias?: string, parameters?: ObjectLiteral) {
+    const { newCondition, newParameters } = this.#rewriteParameters(selection, parameters || {});
+
+    if (this.#config.selects.length > 0) {
+      this.#qb.addSelect(newCondition, alias);
+    } else {
+      this.#qb.select(newCondition, alias);
+    }
+
+    this.#qb.setParameters(newParameters);
+
+    this.#config.selects.push(alias ?? selection);
+
+    return this.#extendedThis();
+  }
+
   #applySubSelect(subquery: AnyQueryBuilder, alias: string) {
     const rawSubQb = subquery.getRawQueryBuilder();
 
@@ -595,33 +611,35 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this.#extendedThis();
   }
 
-  select(selection: string): QueryBuilder<Entity, true, Ext>;
+  select(selection: string, alias?: string, parameters?: ObjectLiteral): QueryBuilder<Entity, true, Ext>;
   select(selection: string[]): QueryBuilder<Entity, true, Ext>;
   select(subquery: AnyQueryBuilder, alias: string): QueryBuilder<Entity, true, Ext>;
   select(
     selectionOrSubquery: string | string[] | AnyQueryBuilder,
     alias?: string,
+    parameters?: ObjectLiteral,
   ): QueryBuilder<Entity, true, Ext> {
     if (Array.isArray(selectionOrSubquery)) return this.clone<Entity, true>().#applySelect(selectionOrSubquery);
-    if (typeof selectionOrSubquery === 'string') return this.clone<Entity, true>().#applySelect([selectionOrSubquery]);
+    if (typeof selectionOrSubquery === 'string') return this.clone<Entity, true>().#applySelectExpression(selectionOrSubquery, alias, parameters);
 
     if (!alias) throw new CustomQueryBuilderError('Alias must be provided when selecting a subquery');
 
     return this.clone<Entity, true>().#applySubSelect(selectionOrSubquery, alias);
   }
 
-  reselect(selection: string): QueryBuilder<Entity, true, Ext>;
+  reselect(selection: string, alias?: string, parameters?: ObjectLiteral): QueryBuilder<Entity, true, Ext>;
   reselect(selection: string[]): QueryBuilder<Entity, true, Ext>;
   reselect(subquery: AnyQueryBuilder, alias: string): QueryBuilder<Entity, true, Ext>;
   reselect(
     selectionOrSubquery: string | string[] | AnyQueryBuilder,
     alias?: string,
+    parameters?: ObjectLiteral,
   ): QueryBuilder<Entity, true, Ext> {
     const fresh = this.clone<Entity, true>();
     fresh.#config.selects = [];
 
     if (Array.isArray(selectionOrSubquery)) return fresh.#applySelect(selectionOrSubquery);
-    if (typeof selectionOrSubquery === 'string') return fresh.#applySelect([selectionOrSubquery]);
+    if (typeof selectionOrSubquery === 'string') return fresh.#applySelectExpression(selectionOrSubquery, alias, parameters);
 
     if (!alias) throw new CustomQueryBuilderError('Alias must be provided when selecting a subquery');
 

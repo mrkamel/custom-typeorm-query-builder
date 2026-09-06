@@ -500,6 +500,16 @@ await UserRepository.qb()
   .getRawMany();
 ```
 
+A string selection also takes an optional alias and bound parameters. Parameter
+names are rewritten the same way as in `where()`, so they can't collide with
+names used elsewhere in the chain:
+
+```ts
+await UserRepository.qb()
+  .select('users.age + :bump', 'bumped', { bump: 5 })
+  .getRawMany();
+```
+
 A sub-query plus an alias embeds a scalar sub-query as an aliased column. When
 it is the *first* select on the chain it replaces the default entity selection,
 so the row contains only the aliased column. Chain an explicit `select(...)`
@@ -533,6 +543,16 @@ by a prior `select(...)` or `leftJoinAndSelect(...)`/`innerJoinAndSelect(...)`:
 await UserRepository.qb()
   .select('users.name')
   .reselect('users.age') // only `users.age` comes back, not `users.name`
+  .getRawMany();
+```
+
+Like `select(...)`, a string passed to `reselect(...)` accepts an optional alias
+and bound parameters:
+
+```ts
+await UserRepository.qb()
+  .select('users.name')
+  .reselect('users.age + :bump', 'bumped', { bump: 5 })
   .getRawMany();
 ```
 

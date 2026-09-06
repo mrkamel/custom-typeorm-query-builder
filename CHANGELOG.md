@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.13.0
+
+### Added
+
+- `select()` and `reselect()` accept an optional alias and bound parameters after a string
+  selection: `select(selection, alias?, parameters?)`. Parameter names are rewritten the same
+  way as in `where()`, so they can't collide with names used elsewhere in the chain.
+
 ## 0.12.0
 
 ### Added

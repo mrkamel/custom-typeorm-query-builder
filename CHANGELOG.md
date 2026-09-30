@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.14.0
+
+### Added
+
+- Exported types `QueryBuilder<Entity, Projected, Ext>` and `PolymorphicExtensions<Entity, Ext>`,
+  for annotating the return type of functions that build on `defineQueryBuilder` extensions.
+
 ## 0.13.0
 
 ### Added

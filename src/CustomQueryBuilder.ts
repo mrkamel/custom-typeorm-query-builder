@@ -133,7 +133,7 @@ type ApplyJoinsAndSelects<Entity, Spec> =
 export type LeftJoinsAndSelects<Entity, Spec extends JoinSpec<Entity>> = ApplyLeftJoinsAndSelects<Entity, Spec>;
 export type JoinsAndSelects<Entity, Spec extends JoinSpec<Entity>> = ApplyJoinsAndSelects<Entity, Spec>;
 
-type QueryBuilder<Entity extends ObjectLiteral, Projected extends boolean = false, Ext extends object = Record<never, never>> =
+export type QueryBuilder<Entity extends ObjectLiteral, Projected extends boolean = false, Ext extends object = Record<never, never>> =
   Omit<CustomQueryBuilder<Entity, Projected, Ext>, Projected extends true ? 'getOne' | 'getMany' | 'getOneOrFail' | 'forEach' : never> & Ext;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -837,7 +837,7 @@ type ExtensionEntity<Ret> =
 // stays callable after `select()` and keeps `getMany`/`getOne` omitted there, exactly like a
 // built-in. A method that only adds `where`/`orderBy` returns the base entity, so the intersection
 // is a no-op and the current narrowing is preserved.
-type PolymorphicExtensions<Entity extends ObjectLiteral, Ext extends object> = {
+export type PolymorphicExtensions<Entity extends ObjectLiteral, Ext extends object> = {
   [K in keyof Ext]: Ext[K] extends (...args: infer A) => infer Ret
     ? [ExtensionEntity<Ret>] extends [never]
       ? Ext[K]

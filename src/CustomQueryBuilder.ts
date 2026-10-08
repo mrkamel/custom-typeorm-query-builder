@@ -166,6 +166,16 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this.#repository.manager.connection.driver.escape(column);
   }
 
+  #mapPropertyNameToColumnName(propertyName: string) {
+    const column = this.#repository.metadata.ownColumns.find((ownColumn) => ownColumn.propertyName === propertyName);
+
+    if (!column) {
+      throw new CustomQueryBuilderError(`Column "${propertyName}" not found on ${this.#repository.metadata.name}`);
+    }
+
+    return column.databaseName;
+  }
+
   #incrementParameter() {
     return `__param${this.#config.parameterCount++}`;
   }
@@ -241,7 +251,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
 
       Object.keys(conditionsObject).forEach((key) => {
         const value = conditionsObject[key];
-        const column = `${this.#quoteColumnName(this.#alias)}.${this.#quoteColumnName(key)}`;
+        const column = `${this.#quoteColumnName(this.#alias)}.${this.#quoteColumnName(this.#mapPropertyNameToColumnName(key))}`;
 
         if (value === null) {
           this.#qb.andWhere(`(${column} IS NULL)`);
@@ -284,7 +294,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
 
       Object.keys(conditionsObject).forEach((key) => {
         const value = conditionsObject[key];
-        const column = `${this.#quoteColumnName(this.#alias)}.${this.#quoteColumnName(key)}`;
+        const column = `${this.#quoteColumnName(this.#alias)}.${this.#quoteColumnName(this.#mapPropertyNameToColumnName(key))}`;
 
         if (value === null) {
           this.#qb.andWhere(`(${column} IS NOT NULL)`);

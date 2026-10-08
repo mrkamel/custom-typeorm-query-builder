@@ -13,6 +13,6 @@ export class ProfileEntity {
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
 
-  @Column({ type: 'uuid' })
-  user_id!: string;
+  @Column({ name: 'user_id', type: 'uuid' })
+  userId!: string;
 }

@@ -16,12 +16,12 @@ async function createUser({ name = 'Name', age = null }: { name?: string, age?: 
   return await UserRepository.save({ name, age });
 }
 
-async function createProfile({ bio = 'Bio', user_id }: { bio?: string, user_id: string }) {
-  return await ProfileRepository.save({ bio, user_id });
+async function createProfile({ bio = 'Bio', userId }: { bio?: string, userId: string }) {
+  return await ProfileRepository.save({ bio, userId });
 }
 
-async function createPost({ title = 'Title', published = false, user_id }: { title?: string, published?: boolean, user_id: string }) {
-  return await PostRepository.save({ title, published, user_id });
+async function createPost({ title = 'Title', isPublished = false, userId }: { title?: string, isPublished?: boolean, userId: string }) {
+  return await PostRepository.save({ title, isPublished, userId });
 }
 
 describe('CustomQueryBuilder', () => {
@@ -182,7 +182,7 @@ describe('CustomQueryBuilder', () => {
     it('isolates branched builders with mixed join / select / where chains', async () => {
       const alice = await createUser({ name: 'alice', age: 30 });
       const bob = await createUser({ name: 'bob', age: 40 });
-      await createProfile({ user_id: alice.id });
+      await createProfile({ userId: alice.id });
 
       const base = UserRepository.qb()
         .leftJoin<['profile']>('users.profile', 'profile')
@@ -311,6 +311,135 @@ describe('CustomQueryBuilder', () => {
     });
   });
 
+  describe('property name to column name mapping', () => {
+    it('where matches by a property whose column name differs', async () => {
+      const alice = await createUser({ name: 'alice' });
+      const published = await createPost({ isPublished: true, userId: alice.id });
+      await createPost({ isPublished: false, userId: alice.id });
+
+      const result = await PostRepository.qb().where({ isPublished: true, userId: alice.id }).getMany();
+
+      expect(result.map((post) => post.id)).toEqual([published.id]);
+    });
+
+    it('where matches an IN array by a property whose column name differs', async () => {
+      const alice = await createUser({ name: 'alice' });
+      const bob = await createUser({ name: 'bob' });
+      const carol = await createUser({ name: 'carol' });
+      const alicePost = await createPost({ userId: alice.id });
+      const bobPost = await createPost({ userId: bob.id });
+      await createPost({ userId: carol.id });
+
+      const result = await PostRepository.qb().where({ userId: [alice.id, bob.id] }).getMany();
+
+      expect(result.map((post) => post.id).sort()).toEqual([alicePost.id, bobPost.id].sort());
+    });
+
+    it('whereNot excludes by a property whose column name differs', async () => {
+      const alice = await createUser({ name: 'alice' });
+      await createPost({ isPublished: true, userId: alice.id });
+      const draft = await createPost({ isPublished: false, userId: alice.id });
+
+      const result = await PostRepository.qb().whereNot({ isPublished: true }).getMany();
+
+      expect(result.map((post) => post.id)).toEqual([draft.id]);
+    });
+
+    it('whereNot excludes a NOT IN array by a property whose column name differs', async () => {
+      const alice = await createUser({ name: 'alice' });
+      const bob = await createUser({ name: 'bob' });
+      await createPost({ userId: alice.id });
+      const bobPost = await createPost({ userId: bob.id });
+
+      const result = await PostRepository.qb().whereNot({ userId: [alice.id] }).getMany();
+
+      expect(result.map((post) => post.id)).toEqual([bobPost.id]);
+    });
+
+    it('orderBy sorts by a property whose column name differs', async () => {
+      const alice = await createUser({ name: 'alice' });
+      await createPost({ title: 'draft', isPublished: false, userId: alice.id });
+      await createPost({ title: 'published', isPublished: true, userId: alice.id });
+
+      const result = await PostRepository.qb().orderBy({ isPublished: 'DESC' }).getMany();
+
+      expect(result.map((post) => post.title)).toEqual(['published', 'draft']);
+    });
+
+    it('orderBy sorts by a mapped property on the distinctAlias pagination path', async () => {
+      const alice = await createUser({ name: 'alice' });
+      const bob = await createUser({ name: 'bob' });
+      await createPost({ title: 'draft', isPublished: false, userId: alice.id });
+      await createPost({ title: 'published', isPublished: true, userId: bob.id });
+
+      const result = await PostRepository.qb('root_posts')
+        .leftJoinsAndSelects({ user: ['posts'] })
+        .orderBy({ isPublished: 'DESC' })
+        .take(1)
+        .getMany();
+
+      expect(result.map((post) => post.title)).toEqual(['published']);
+    });
+
+    it('reorderBy sorts by a property whose column name differs', async () => {
+      const alice = await createUser({ name: 'alice' });
+      await createPost({ title: 'b', isPublished: false, userId: alice.id });
+      await createPost({ title: 'a', isPublished: true, userId: alice.id });
+
+      const result = await PostRepository.qb()
+        .orderBy({ title: 'ASC' })
+        .reorderBy({ isPublished: 'ASC' })
+        .getMany();
+
+      expect(result.map((post) => post.title)).toEqual(['b', 'a']);
+    });
+
+    it('update sets a property whose column name differs', async () => {
+      const alice = await createUser({ name: 'alice' });
+      const post = await createPost({ isPublished: false, userId: alice.id });
+
+      await PostRepository.qb().where({ id: post.id }).update({ isPublished: true });
+
+      const updated = await PostRepository.findOneByOrFail({ id: post.id });
+      expect(updated.isPublished).toBe(true);
+    });
+
+    it('resolves a mapped property path in a raw where condition', async () => {
+      const alice = await createUser({ name: 'alice' });
+      const published = await createPost({ isPublished: true, userId: alice.id });
+      await createPost({ isPublished: false, userId: alice.id });
+
+      const result = await PostRepository.qb().where('posts.isPublished = :value', { value: true }).getMany();
+
+      expect(result.map((post) => post.id)).toEqual([published.id]);
+    });
+
+    it('where matches a to-one relation key by its join column', async () => {
+      const alice = await createUser({ name: 'alice' });
+      const bob = await createUser({ name: 'bob' });
+      const alicePost = await createPost({ userId: alice.id });
+      await createPost({ userId: bob.id });
+
+      const result = await PostRepository.qb().where({ user: alice.id }).getMany();
+
+      expect(result.map((post) => post.id)).toEqual([alicePost.id]);
+    });
+
+    it('throws for a key that has no column on the entity', () => {
+      expect(() => UserRepository.qb().where({ profile: null })).toThrow(/Column "profile" not found on UserEntity/);
+      expect(() => UserRepository.qb().whereNot({ profile: null })).toThrow(/Column "profile" not found on UserEntity/);
+    });
+
+    it('selects a mapped property path as a raw column', async () => {
+      const alice = await createUser({ name: 'alice' });
+      await createPost({ isPublished: true, userId: alice.id });
+
+      const rows = await PostRepository.qb().select('posts.userId', 'author').getRawMany();
+
+      expect(rows).toEqual([{ author: alice.id }]);
+    });
+  });
+
   describe('object form column restrictions', () => {
     it('rejects array-typed columns at the type level', () => {
 
@@ -432,7 +561,7 @@ describe('CustomQueryBuilder', () => {
   describe('leftJoinAndSelect', () => {
     it('joins and hydrates the related entity', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'bio', user_id: alice.id });
+      await createProfile({ bio: 'bio', userId: alice.id });
 
       const result = await UserRepository.qb()
         .leftJoinAndSelect<['profile']>('users.profile', 'profile')
@@ -446,7 +575,7 @@ describe('CustomQueryBuilder', () => {
   describe('leftJoinsAndSelects', () => {
     it('joins and selects a single to-one relation', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'bio', user_id: alice.id });
+      await createProfile({ bio: 'bio', userId: alice.id });
 
       const result = await UserRepository.qb()
         .leftJoinsAndSelects(['profile'])
@@ -458,8 +587,8 @@ describe('CustomQueryBuilder', () => {
 
     it('accepts an array of relation names', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'bio', user_id: alice.id });
-      await createPost({ title: 'title', user_id: alice.id });
+      await createProfile({ bio: 'bio', userId: alice.id });
+      await createPost({ title: 'title', userId: alice.id });
 
       const result = await UserRepository.qb()
         .leftJoinsAndSelects(['profile', 'posts'])
@@ -472,8 +601,8 @@ describe('CustomQueryBuilder', () => {
 
     it('accepts an array as the value of an object entry', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'bio', user_id: alice.id });
-      await createPost({ user_id: alice.id });
+      await createProfile({ bio: 'bio', userId: alice.id });
+      await createPost({ userId: alice.id });
 
       const result = await PostRepository.qb()
         .leftJoinsAndSelects({ user: ['profile'] })
@@ -485,8 +614,8 @@ describe('CustomQueryBuilder', () => {
 
     it('mixes string entries and nested-spec objects in the same array', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'bio', user_id: alice.id });
-      await createPost({ title: 'title', user_id: alice.id });
+      await createProfile({ bio: 'bio', userId: alice.id });
+      await createPost({ title: 'title', userId: alice.id });
 
       const result = await UserRepository.qb('parent_users')
         .leftJoinsAndSelects(['profile', { posts: ['user'] }])
@@ -500,9 +629,9 @@ describe('CustomQueryBuilder', () => {
 
     it('joins and selects multiple relations at once', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'bio', user_id: alice.id });
-      await createPost({ title: 'one', user_id: alice.id });
-      await createPost({ title: 'two', user_id: alice.id });
+      await createProfile({ bio: 'bio', userId: alice.id });
+      await createPost({ title: 'one', userId: alice.id });
+      await createPost({ title: 'two', userId: alice.id });
 
       const result = await UserRepository.qb()
         .leftJoinsAndSelects(['profile', 'posts'])
@@ -515,8 +644,8 @@ describe('CustomQueryBuilder', () => {
 
     it('joins and selects nested relations using target table names as aliases', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'bio', user_id: alice.id });
-      await createPost({ user_id: alice.id });
+      await createProfile({ bio: 'bio', userId: alice.id });
+      await createPost({ userId: alice.id });
 
       const result = await PostRepository.qb()
         .leftJoinsAndSelects({ user: ['profile'] })
@@ -529,7 +658,7 @@ describe('CustomQueryBuilder', () => {
     it('uses LEFT JOIN and keeps rows without the relation', async () => {
       const alice = await createUser({ name: 'alice' });
       const bob = await createUser({ name: 'bob' });
-      await createProfile({ bio: 'bio', user_id: alice.id });
+      await createProfile({ bio: 'bio', userId: alice.id });
 
       const result = await UserRepository.qb()
         .leftJoinsAndSelects(['profile'])
@@ -544,7 +673,7 @@ describe('CustomQueryBuilder', () => {
     it('exposes the join alias for use in where clauses', async () => {
       const alice = await createUser({ name: 'alice' });
       await createUser({ name: 'bob' });
-      await createProfile({ bio: 'bio', user_id: alice.id });
+      await createProfile({ bio: 'bio', userId: alice.id });
 
       const result = await UserRepository.qb()
         .leftJoinsAndSelects(['profile'])
@@ -582,7 +711,7 @@ describe('CustomQueryBuilder', () => {
     it('inner-joins a single relation and hydrates it', async () => {
       const alice = await createUser({ name: 'alice' });
       await createUser({ name: 'bob' });
-      await createProfile({ bio: 'bio', user_id: alice.id });
+      await createProfile({ bio: 'bio', userId: alice.id });
 
       const result = await UserRepository.qb()
         .joinsAndSelects(['profile'])
@@ -595,7 +724,7 @@ describe('CustomQueryBuilder', () => {
     it('filters out rows without the relation', async () => {
       const alice = await createUser({ name: 'alice' });
       const bob = await createUser({ name: 'bob' });
-      await createProfile({ user_id: alice.id });
+      await createProfile({ userId: alice.id });
 
       const result = await UserRepository.qb()
         .joinsAndSelects(['profile'])
@@ -608,11 +737,11 @@ describe('CustomQueryBuilder', () => {
 
     it('hydrates nested relations using target table names as aliases', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'bio', user_id: alice.id });
-      await createPost({ title: 'one', user_id: alice.id });
+      await createProfile({ bio: 'bio', userId: alice.id });
+      await createPost({ title: 'one', userId: alice.id });
 
       const bob = await createUser({ name: 'bob' });
-      await createPost({ user_id: bob.id });
+      await createPost({ userId: bob.id });
 
       const result = await PostRepository.qb()
         .joinsAndSelects({ user: ['profile'] })
@@ -624,9 +753,9 @@ describe('CustomQueryBuilder', () => {
 
     it('exposes the join alias for use in where clauses', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'bio', user_id: alice.id });
+      await createProfile({ bio: 'bio', userId: alice.id });
       const carol = await createUser({ name: 'carol' });
-      await createProfile({ bio: 'other', user_id: carol.id });
+      await createProfile({ bio: 'other', userId: carol.id });
       const _bob = await createUser({ name: 'bob' });
 
       const result = await UserRepository.qb()
@@ -658,7 +787,7 @@ describe('CustomQueryBuilder', () => {
     it('inner-joins a single relation without hydrating it', async () => {
       const alice = await createUser({ name: 'alice' });
       await createUser({ name: 'bob' });
-      await createProfile({ user_id: alice.id });
+      await createProfile({ userId: alice.id });
 
       const result = await UserRepository.qb()
         .joins(['profile'])
@@ -670,9 +799,9 @@ describe('CustomQueryBuilder', () => {
 
     it('exposes the table-name alias for use in where clauses', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'bio', user_id: alice.id });
+      await createProfile({ bio: 'bio', userId: alice.id });
       const carol = await createUser({ name: 'carol' });
-      await createProfile({ bio: 'other', user_id: carol.id });
+      await createProfile({ bio: 'other', userId: carol.id });
       const _bob = await createUser({ name: 'bob' });
 
       const result = await UserRepository.qb()
@@ -685,11 +814,11 @@ describe('CustomQueryBuilder', () => {
 
     it('joins nested relations using target table names as aliases', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ user_id: alice.id });
-      await createPost({ title: 'one', user_id: alice.id });
+      await createProfile({ userId: alice.id });
+      await createPost({ title: 'one', userId: alice.id });
 
       const bob = await createUser({ name: 'bob' });
-      await createPost({ user_id: bob.id });
+      await createPost({ userId: bob.id });
 
       const result = await PostRepository.qb()
         .joins({ user: ['profile'] })
@@ -714,7 +843,7 @@ describe('CustomQueryBuilder', () => {
     it('left-joins relations without hydrating and keeps rows without a match', async () => {
       const alice = await createUser({ name: 'alice' });
       const bob = await createUser({ name: 'bob' });
-      await createProfile({ user_id: alice.id });
+      await createProfile({ userId: alice.id });
 
       const result = await UserRepository.qb()
         .leftJoins(['profile'])
@@ -729,7 +858,7 @@ describe('CustomQueryBuilder', () => {
     it('exposes the table-name alias for use in where clauses', async () => {
       const alice = await createUser({ name: 'alice' });
       await createUser({ name: 'bob' });
-      await createProfile({ user_id: alice.id });
+      await createProfile({ userId: alice.id });
 
       const result = await UserRepository.qb()
         .leftJoins(['profile'])
@@ -741,8 +870,8 @@ describe('CustomQueryBuilder', () => {
 
     it('accepts nested specs', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'bio', user_id: alice.id });
-      await createPost({ title: 'title', user_id: alice.id });
+      await createProfile({ bio: 'bio', userId: alice.id });
+      await createPost({ title: 'title', userId: alice.id });
 
       const result = await PostRepository.qb()
         .leftJoins({ user: ['profile'] })
@@ -764,7 +893,7 @@ describe('CustomQueryBuilder', () => {
   describe('leftJoin', () => {
     it('joins without selecting the related entity', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'bio', user_id: alice.id });
+      await createProfile({ bio: 'bio', userId: alice.id });
 
       const result = await UserRepository.qb()
         .leftJoin<['profile']>('users.profile', 'profile')
@@ -780,7 +909,7 @@ describe('CustomQueryBuilder', () => {
     it('only returns rows that have a matching relation', async () => {
       const alice = await createUser({ name: 'alice' });
       await createUser({ name: 'bob' });
-      await createProfile({ bio: 'bio', user_id: alice.id });
+      await createProfile({ bio: 'bio', userId: alice.id });
 
       const result = await UserRepository.qb()
         .innerJoinAndSelect<['profile']>('users.profile', 'profile')
@@ -795,7 +924,7 @@ describe('CustomQueryBuilder', () => {
     it('filters to rows with a matching relation without hydrating it', async () => {
       const alice = await createUser({ name: 'alice' });
       await createUser({ name: 'bob' });
-      await createProfile({ user_id: alice.id });
+      await createProfile({ userId: alice.id });
 
       const result = await UserRepository.qb()
         .innerJoin<['profile']>('users.profile', 'profile')
@@ -868,9 +997,9 @@ describe('CustomQueryBuilder', () => {
     it('survives the distinctAlias pagination path (take + *-to-many join load)', async () => {
       const alice = await createUser({ name: 'alice' });
       const bob = await createUser({ name: 'bob' });
-      await createPost({ title: 'a1', user_id: alice.id });
-      await createPost({ title: 'a2', user_id: alice.id });
-      await createPost({ user_id: bob.id });
+      await createPost({ title: 'a1', userId: alice.id });
+      await createPost({ title: 'a2', userId: alice.id });
+      await createPost({ userId: bob.id });
 
       const result = await UserRepository.qb()
         .leftJoinsAndSelects(['posts'])
@@ -1055,13 +1184,13 @@ describe('CustomQueryBuilder', () => {
       const alice = await createUser({ name: 'alice' });
       const bob = await createUser({ name: 'bob' });
 
-      await createPost({ user_id: alice.id });
-      await createPost({ user_id: alice.id });
-      await createPost({ user_id: bob.id });
+      await createPost({ userId: alice.id });
+      await createPost({ userId: alice.id });
+      await createPost({ userId: bob.id });
 
       const rows = await UserRepository.qb()
         .select('users.name')
-        .select(PostRepository.qb().select('COUNT(*)').where('posts.user_id = users.id'), 'postCount')
+        .select(PostRepository.qb().select('COUNT(*)').where('posts.userId = users.id'), 'postCount')
         .orderBy('users.name', 'ASC')
         .getRawMany();
 
@@ -1187,7 +1316,7 @@ describe('CustomQueryBuilder', () => {
 
     it('drops columns added by a prior leftJoinAndSelect', async () => {
       const alice = await createUser({ name: 'alice' });
-      await createProfile({ bio: 'bio', user_id: alice.id });
+      await createProfile({ bio: 'bio', userId: alice.id });
 
       const rows = await UserRepository.qb()
         .leftJoinAndSelect<['profile']>('users.profile', 'profile')
@@ -1348,28 +1477,28 @@ describe('CustomQueryBuilder', () => {
       const tenantB = randomUUID();
 
       const rows = [
-        { tenant_id: tenantA, user_id: randomUUID(), role: 'admin' },
-        { tenant_id: tenantA, user_id: randomUUID(), role: 'member' },
-        { tenant_id: tenantB, user_id: randomUUID(), role: 'admin' },
-        { tenant_id: tenantB, user_id: randomUUID(), role: 'member' },
-        { tenant_id: tenantB, user_id: randomUUID(), role: 'viewer' },
+        { tenantId: tenantA, userId: randomUUID(), role: 'admin' },
+        { tenantId: tenantA, userId: randomUUID(), role: 'member' },
+        { tenantId: tenantB, userId: randomUUID(), role: 'admin' },
+        { tenantId: tenantB, userId: randomUUID(), role: 'member' },
+        { tenantId: tenantB, userId: randomUUID(), role: 'viewer' },
       ];
 
       for (const row of rows) await MembershipRepository.save(row);
 
-      const yielded: { tenant_id: string, user_id: string }[] = [];
+      const yielded: { tenantId: string, userId: string }[] = [];
 
       for await (const row of MembershipRepository.qb().forEach({ batchSize: 2, direction: 'DESC' })) {
-        yielded.push({ tenant_id: row.tenant_id, user_id: row.user_id });
+        yielded.push({ tenantId: row.tenantId, userId: row.userId });
       }
 
       const expected = [...rows].sort((left, right) => {
-        if (left.tenant_id !== right.tenant_id) return left.tenant_id < right.tenant_id ? 1 : -1;
+        if (left.tenantId !== right.tenantId) return left.tenantId < right.tenantId ? 1 : -1;
 
-        return left.user_id < right.user_id ? 1 : -1;
+        return left.userId < right.userId ? 1 : -1;
       });
 
-      expect(yielded).toEqual(expected.map((row) => ({ tenant_id: row.tenant_id, user_id: row.user_id })));
+      expect(yielded).toEqual(expected.map((row) => ({ tenantId: row.tenantId, userId: row.userId })));
     });
 
     it('iterates correctly with a composite primary key', async () => {
@@ -1377,28 +1506,28 @@ describe('CustomQueryBuilder', () => {
       const tenantB = randomUUID();
 
       const rows = [
-        { tenant_id: tenantA, user_id: randomUUID(), role: 'admin' },
-        { tenant_id: tenantA, user_id: randomUUID(), role: 'member' },
-        { tenant_id: tenantA, user_id: randomUUID(), role: 'viewer' },
-        { tenant_id: tenantB, user_id: randomUUID(), role: 'admin' },
-        { tenant_id: tenantB, user_id: randomUUID(), role: 'member' },
+        { tenantId: tenantA, userId: randomUUID(), role: 'admin' },
+        { tenantId: tenantA, userId: randomUUID(), role: 'member' },
+        { tenantId: tenantA, userId: randomUUID(), role: 'viewer' },
+        { tenantId: tenantB, userId: randomUUID(), role: 'admin' },
+        { tenantId: tenantB, userId: randomUUID(), role: 'member' },
       ];
 
       for (const row of rows) await MembershipRepository.save(row);
 
-      const yielded: { tenant_id: string, user_id: string }[] = [];
+      const yielded: { tenantId: string, userId: string }[] = [];
 
       for await (const row of MembershipRepository.qb().forEach({ batchSize: 2 })) {
-        yielded.push({ tenant_id: row.tenant_id, user_id: row.user_id });
+        yielded.push({ tenantId: row.tenantId, userId: row.userId });
       }
 
       const expected = [...rows].sort((a, b) => {
-        if (a.tenant_id !== b.tenant_id) return a.tenant_id < b.tenant_id ? -1 : 1;
+        if (a.tenantId !== b.tenantId) return a.tenantId < b.tenantId ? -1 : 1;
 
-        return a.user_id < b.user_id ? -1 : 1;
+        return a.userId < b.userId ? -1 : 1;
       });
 
-      expect(yielded).toEqual(expected.map((row) => ({ tenant_id: row.tenant_id, user_id: row.user_id })));
+      expect(yielded).toEqual(expected.map((row) => ({ tenantId: row.tenantId, userId: row.userId })));
     });
 
     it('ignores any prior skip/take/limit in the chain', async () => {
@@ -1617,7 +1746,7 @@ describe('defineQueryBuilder', () => {
 
   it('hydrates a relation from a custom join method and narrows the type', async () => {
     const alice = await createUser({ name: 'alice' });
-    await createProfile({ bio: 'bio', user_id: alice.id });
+    await createProfile({ bio: 'bio', userId: alice.id });
 
     const user = await UserRepository.cqb().withProfile().where({ name: 'alice' }).getOneOrFail();
 
@@ -1626,7 +1755,7 @@ describe('defineQueryBuilder', () => {
 
   it('chains a built-in join filter after a custom join method', async () => {
     const alice = await createUser({ name: 'alice', age: 30 });
-    await createProfile({ bio: 'bio', user_id: alice.id });
+    await createProfile({ bio: 'bio', userId: alice.id });
     await createUser({ name: 'bob', age: 30 });
 
     const result = await UserRepository.cqb()
@@ -1641,8 +1770,8 @@ describe('defineQueryBuilder', () => {
   it('supports a join-based custom method on another repository (defined via a thunk)', async () => {
     const alice = await createUser({ name: 'alice' });
     const bob = await createUser({ name: 'bob' });
-    await createPost({ title: 'title', user_id: alice.id });
-    await createPost({ user_id: bob.id });
+    await createPost({ title: 'title', userId: alice.id });
+    await createPost({ userId: bob.id });
 
     const result = await PostRepository.cqb().authoredBy('alice').getMany();
 
@@ -1669,8 +1798,8 @@ describe('defineQueryBuilder', () => {
 
   it('keeps a join-narrowed type when a preserving custom method is chained after the join', async () => {
     const alice = await createUser({ name: 'alice' });
-    await createPost({ title: 'title 1', user_id: alice.id });
-    await createPost({ title: 'title 2', user_id: alice.id });
+    await createPost({ title: 'title 1', userId: alice.id });
+    await createPost({ title: 'title 2', userId: alice.id });
 
     const rows = await UserRepository.cqb()
       .withPosts()
@@ -1683,8 +1812,8 @@ describe('defineQueryBuilder', () => {
 
   it('accumulates the narrowed type across multiple custom join methods', async () => {
     const alice = await createUser({ name: 'alice' });
-    await createProfile({ bio: 'bio', user_id: alice.id });
-    await createPost({ title: 'title', user_id: alice.id });
+    await createProfile({ bio: 'bio', userId: alice.id });
+    await createPost({ title: 'title', userId: alice.id });
 
     const rows = await UserRepository.cqb()
       .withPosts()
@@ -1699,8 +1828,8 @@ describe('defineQueryBuilder', () => {
 
   it('applies a shared, entity-generic extension and keeps join narrowing', async () => {
     const alice = await createUser({ name: 'alice' });
-    await createPost({ title: 'title 1', user_id: alice.id });
-    await createPost({ title: 'title 2', user_id: alice.id });
+    await createPost({ title: 'title 1', userId: alice.id });
+    await createPost({ title: 'title 2', userId: alice.id });
 
     const [rows, total] = await UserRepository.cqb()
       .withPosts()

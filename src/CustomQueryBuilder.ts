@@ -166,14 +166,14 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
     return this.#repository.manager.connection.driver.escape(column);
   }
 
-  #quoteAliasedColumn(propertyPath: string) {
-    const column = this.#repository.metadata.findColumnWithPropertyPath(propertyPath);
+  #mapPropertyNameToColumnName(propertyName: string) {
+    const column = this.#repository.metadata.ownColumns.find((ownColumn) => ownColumn.propertyName === propertyName);
 
     if (!column) {
-      throw new CustomQueryBuilderError(`Column "${propertyPath}" not found on ${this.#repository.metadata.name}`);
+      throw new CustomQueryBuilderError(`Column "${propertyName}" not found on ${this.#repository.metadata.name}`);
     }
 
-    return `${this.#quoteColumnName(this.#alias)}.${this.#quoteColumnName(column.databaseName)}`;
+    return column.databaseName;
   }
 
   #incrementParameter() {
@@ -251,7 +251,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
 
       Object.keys(conditionsObject).forEach((key) => {
         const value = conditionsObject[key];
-        const column = this.#quoteAliasedColumn(key);
+        const column = `${this.#quoteColumnName(this.#alias)}.${this.#quoteColumnName(this.#mapPropertyNameToColumnName(key))}`;
 
         if (value === null) {
           this.#qb.andWhere(`(${column} IS NULL)`);
@@ -294,7 +294,7 @@ export class CustomQueryBuilder<Entity extends ObjectLiteral, Projected extends 
 
       Object.keys(conditionsObject).forEach((key) => {
         const value = conditionsObject[key];
-        const column = this.#quoteAliasedColumn(key);
+        const column = `${this.#quoteColumnName(this.#alias)}.${this.#quoteColumnName(this.#mapPropertyNameToColumnName(key))}`;
 
         if (value === null) {
           this.#qb.andWhere(`(${column} IS NOT NULL)`);

@@ -414,20 +414,13 @@ describe('CustomQueryBuilder', () => {
       expect(result.map((post) => post.id)).toEqual([published.id]);
     });
 
-    it('where matches a to-one relation key by its join column', async () => {
-      const alice = await createUser({ name: 'alice' });
-      const bob = await createUser({ name: 'bob' });
-      const alicePost = await createPost({ userId: alice.id });
-      await createPost({ userId: bob.id });
-
-      const result = await PostRepository.qb().where({ user: alice.id }).getMany();
-
-      expect(result.map((post) => post.id)).toEqual([alicePost.id]);
-    });
-
     it('throws for a key that has no column on the entity', () => {
       expect(() => UserRepository.qb().where({ profile: null })).toThrow(/Column "profile" not found on UserEntity/);
       expect(() => UserRepository.qb().whereNot({ profile: null })).toThrow(/Column "profile" not found on UserEntity/);
+    });
+
+    it('throws for a relation key instead of falling back to its join column', () => {
+      expect(() => PostRepository.qb().where({ user: 'id' })).toThrow(/Column "user" not found on PostEntity/);
     });
 
     it('selects a mapped property path as a raw column', async () => {

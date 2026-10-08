@@ -6,8 +6,8 @@
 
 - Object-form `where()` and `whereNot()` now resolve each property to its database column name,
   so they work for columns declared with a different `name` (e.g. `isPublished` → `is_published`).
-  A to-one relation key resolves to its join column; a key without a column (e.g. the inverse side
-  of a relation) throws a `CustomQueryBuilderError` instead of producing invalid SQL.
+  A key that is not a column property of the entity (e.g. a relation) throws a
+  `CustomQueryBuilderError` instead of producing invalid SQL.
 
 ## 0.14.0
 
